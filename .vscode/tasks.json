@@ -1,0 +1,20 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Activate Virtual Environment",
+            "type": "shell",
+            "command": "${env:OS}",
+            "windows": {
+                "command": ".\\.venv\\Scripts\\Activate.ps1"
+            },
+            "osx": {
+                "command": "source .venv/bin/activate"
+            },
+            "linux": {
+                "command": "source .venv/bin/activate"
+            },
+            "problemMatcher": []
+        }
+    ]
+}
