@@ -59,6 +59,8 @@ class AppData:
     def get_api_key(self, key: str) -> str:
         """
         Retrieve an API key from environment variables.
+        This allows mapping service names to their corresponding API keys.
+        It will fallback to the environment variable with the same name as the key.
 
         Args:
             key (str): The key name of the API service (e.g., 'googlemaps').
@@ -76,7 +78,14 @@ class AppData:
             "huggingface": "HUGGINGFACE_API_KEY",
             "googlegemini": "GEMINY_API_KEY",
             "openai": "OPENAI_API_KEY",
+            "coinbase": "COINBASE_API_KEY"
         }
+        
+        # If the key is not found we can try a fallback by looking for an
+        # environment variable with the same name as the key.
+        env_key = f"{key.upper()}"
+        if env_key in os.environ:
+            return os.getenv(env_key)
 
         try:
             if not key_map.get(key):

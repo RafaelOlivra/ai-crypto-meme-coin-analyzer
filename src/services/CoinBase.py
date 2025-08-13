@@ -3,7 +3,7 @@ import json
 import requests
 import streamlit as st
 
-from typing import Any, Union
+from typing import Any, Union, Optional, Dict, List
 
 from src.services.log.Logger import _log
 from services.AppData import AppData
@@ -11,63 +11,40 @@ from services.AppData import AppData
 
 class CoinBase:
     """
-       A base class for handling coin-related operations.
+    A base class for handling coin-related operations.
     """
 
     def __init__(self, api_key=None):
         # Set the API key, either from the environment or directly from the parameter
-        self.api_key = api_key or AppData().get_api_key("openweathermap")
+        self.api_key = api_key or AppData().get_api_key("coinbase")
         if not self.api_key:
-            raise ValueError("API key is required for OpenWeatherMap")
+            raise ValueError("API key is required for Coinbase")
 
-    # --------------------------
-    # Data
-    # --------------------------
-
-    def get_config(self, key: str) -> Any:
-        """
-        Retrieve configuration data from the config JSON file, with the option
-        to override values using environment variables.
-
-        Args:
-            key (str): The specific key in the configuration file.
-
-        Returns:
-            Any: The configuration value, or None if the key does not exist.
-        """
-        config_file = "src/config/cfg.json"
-
-        # Allow overriding config values with environment variables
-        env_key = f"__CONFIG_OVERRIDE_{key}"
-
-        # Check if the key exists in environment variables
-        if env_key in os.environ:
-            return os.getenv(env_key)
-
-        # Otherwise, load from JSON config file
-        if os.path.exists(config_file):
-            with open(config_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data.get(key)
-
-        return None  # Return None if the key is not found in either place
-
-    # --------------------------
-    # Utils
-    # --------------------------
+        self.base_url = ""
+        self.session = requests.Session()
 
     @st.cache_data(ttl=86400)
-    def _fetch_json(_self, url: str):
+    def _fetch(_self, url: str, method: str = "get", params: Optional[dict] = None, data: Optional[Any] = None, headers: Optional[dict] = None):
         """
-        Fetches JSON data from the specified URL.
-
-        Args:
-            url (str): The URL to fetch the JSON data from.
-
-        Returns:
-            dict: The JSON data as a dictionary.
-
+        Fetches data from the specified URL using a common API call.
+        
+        This method handles both GET and POST requests and includes headers.
         """
-        response = requests.get(url)
+        if not url.startswith("http"):
+            url = _self.base_url + url
+
+        # Add auth headers
+        if headers is None:
+            headers = {}
+        headers["X-API-KEY"] = _self.api_key
+        headers["Content-Type"] = "application/json"
+
+        if method.lower() == "get":
+            response = _self.session.get(url, params=params, headers=headers)
+        elif method.lower() == "post":
+            response = _self.session.post(url, data=data, headers=headers)
+        else:
+            raise ValueError(f"Unsupported HTTP method: {method}")
+
         response.raise_for_status()
         return response.json()

@@ -35,7 +35,7 @@ class CoinGecko:
         if category:
             params["category"] = category
 
-        return self._fetch_json("/coins/markets", params=params)
+        return self._fetch("/coins/markets", params=params)
 
     def get_solana_meme_coins_market_data(self, vs_currency: str = "usd", per_page: int = 250, page: int = 1) -> List[Dict]:
         """
@@ -50,7 +50,7 @@ class CoinGecko:
             list: List of Solana meme coins.
         """
         # Get category list
-        categories = self._fetch_json("/coins/categories/list")
+        categories = self._fetch("/coins/categories/list")
         category_id = None
         for cat in categories:
             if cat["name"].strip().lower() == "solana meme":
@@ -79,10 +79,10 @@ class CoinGecko:
             "sparkline": "true" if sparkline else "false"
         }
 
-        return self._fetch_json(f"/coins/{coin_id}", params=params)
+        return self._fetch(f"/coins/{coin_id}", params=params)
 
     @st.cache_data(ttl=86400)
-    def _fetch_json(_self, url: str, params: Optional[dict] = None):
+    def _fetch(_self, url: str, params: Optional[dict] = None):
         """
         Fetches JSON data from the specified URL.
         """

@@ -4,7 +4,6 @@ import time
 from services.CoinGecko import CoinGecko
 from services.log.Logger import _log
 
-@pytest.mark.skip(reason="API limit exceeded")
 def test_get_coin_market_data():
     coingecko = CoinGecko()
     data = coingecko.get_coin_market_data(vs_currency="usd")
@@ -15,7 +14,6 @@ def test_get_coin_market_data():
     assert "current_price" in data[0]
     time.sleep(1)
 
-@pytest.mark.skip(reason="API limit exceeded")
 def test_get_coin_solana_meme_coins_market_data():
     coingecko = CoinGecko()
     data = coingecko.get_solana_meme_coins_market_data(vs_currency="usd")
