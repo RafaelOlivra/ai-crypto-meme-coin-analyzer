@@ -2,7 +2,7 @@ import re
 import requests
 import json
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from services.AppData import AppData
 
@@ -86,6 +86,23 @@ class Utils:
         return requests.utils.quote(text)
 
     @staticmethod
+    def formatted_date(_date: date | datetime | str | None = None, format="", delta_seconds: int = 0) -> str:
+        """
+        Get the current date in a specific format.
+
+        Returns:
+            str: The current date as a formatted string.
+        """
+        if not _date:
+            _date = datetime.now()
+        _date = Utils.to_datetime(_date)
+
+        if delta_seconds:
+            _date += timedelta(seconds=delta_seconds)
+
+        return Utils.to_date_string(_date, format=format)
+
+    @staticmethod
     def to_date_string(_date: date | datetime | str, format="") -> str:
         """
         Convert a date object to a string.
@@ -101,17 +118,17 @@ class Utils:
         if isinstance(_date, str):
             _date = datetime.fromisoformat(_date)
 
-        # Convert date to datetime object
-        if isinstance(_date, date):
+        # If it's a date (not datetime), convert to datetime at midnight
+        if isinstance(_date, date) and not isinstance(_date, datetime):
             _date = datetime.combine(_date, datetime.min.time())
 
         if format == "display":
-            return str(_date.strftime(AppData().get_config("datetime_display_format")))
+            return _date.strftime(AppData().get_config("datetime_display_format"))
         elif format == "iso_date_only":
             return _date.strftime("%Y-%m-%d")
         else:
-            # Return isoformat by default
-            return _date.isoformat()
+            # Return ISO format with full time precision (seconds, microseconds)
+            return _date.isoformat(timespec="seconds")
 
     @staticmethod
     def to_date_string_recursive(items: list | dict, format="") -> list | dict:

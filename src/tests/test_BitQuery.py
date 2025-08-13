@@ -27,3 +27,14 @@ def test_get_recent_coin_transactions():
     _log("Recent transactions fetched successfully.", transactions)
     assert isinstance(transactions, list)
     assert len(transactions) == 3
+    
+def test_get_gmgn_coin_summary():
+    bitquery = BitQuerySolana()
+    token = "AMekwDHTH33p6K6J8gL2wdwNjNF8kV2WoYxAaQAHmoon"
+    pair_address = "CXPQ4WupUBZuXz6Yw56S5a3PJDq7A1MMZ5bM3mB6KrSE"
+    summary = bitquery.get_gmgn_token_summary(token, side_token, pair_address)
+    _log("GMGN token summary fetched successfully.", summary)
+    assert isinstance(summary, dict)
+    assert "start" in summary
+    assert "min5" in summary
+    assert "end" in summary

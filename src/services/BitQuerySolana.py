@@ -7,6 +7,7 @@ from typing import Any, Union, Optional, Dict, List
 
 from src.services.log.Logger import _log
 from services.AppData import AppData
+from lib.Utils import Utils
 
 
 class BitQuerySolana:
@@ -142,6 +143,133 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
             return None
     
+    def get_gmgn_token_summary(self, token: str, pair_address: str, side_token: str = "So11111111111111111111111111111111111111112"):
+        """
+        Get the summary for the GMGN token trading against a side token in a specific market.
+        
+        Args:
+            token (str): The mint address of the GMGN token.
+            side_token (str): The mint address of the side token (e.g., USDC).
+            pair_address (str): The mint address of the trading pair.
+        """
+        query = """
+          query MyQuery($token: String!, $side_token: String!, $pair_address: String!, $time_5min_ago: DateTime!, $time_1h_ago: DateTime!) {
+          Solana(dataset: realtime) {
+            DEXTradeByTokens(
+              where: {Transaction: {Result: {Success: true}}, Trade: {Currency: {MintAddress: {is: $token}}, Side: {Currency: {MintAddress: {is: $side_token}}}, Market: {MarketAddress: {is: $pair_address}}}, Block: {Time: {since: $time_1h_ago}}}
+            ) {
+              Trade {
+                Currency {
+                  Name
+                  MintAddress
+                  Symbol
+                }
+                start: PriceInUSD(minimum: Block_Time)
+                min5: PriceInUSD(
+                  minimum: Block_Time
+                  if: {Block: {Time: {after: $time_5min_ago}}}
+                )
+                end: PriceInUSD(maximum: Block_Time)
+                Dex {
+                  ProtocolName
+                  ProtocolFamily
+                  ProgramAddress
+                }
+                Market {
+                  MarketAddress
+                }
+                Side {
+                  Currency {
+                    Symbol
+                    Name
+                    MintAddress
+                  }
+                }
+              }
+              makers: count(distinct: Transaction_Signer)
+              makers_5min: count(
+                distinct: Transaction_Signer
+                if: {Block: {Time: {after: $time_5min_ago}}}
+              )
+              buyers: count(
+                distinct: Transaction_Signer
+                if: {Trade: {Side: {Type: {is: buy}}}}
+              )
+              buyers_5min: count(
+                distinct: Transaction_Signer
+                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time_5min_ago}}}
+              )
+              sellers: count(
+                distinct: Transaction_Signer
+                if: {Trade: {Side: {Type: {is: sell}}}}
+              )
+              sellers_5min: count(
+                distinct: Transaction_Signer
+                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time_5min_ago}}}
+              )
+              trades: count
+              trades_5min: count(if: {Block: {Time: {after: $time_5min_ago}}})
+              traded_volume: sum(of: Trade_Side_AmountInUSD)
+              traded_volume_5min: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Block: {Time: {after: $time_5min_ago}}}
+              )
+              buy_volume: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Trade: {Side: {Type: {is: buy}}}}
+              )
+              buy_volume_5min: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time_5min_ago}}}
+              )
+              sell_volume: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Trade: {Side: {Type: {is: sell}}}}
+              )
+              sell_volume_5min: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time_5min_ago}}}
+              )
+              buys: count(if: {Trade: {Side: {Type: {is: buy}}}})
+              buys_5min: count(
+                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time_5min_ago}}}
+              )
+              sells: count(if: {Trade: {Side: {Type: {is: sell}}}})
+              sells_5min: count(
+                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time_5min_ago}}}
+              )
+            }
+          }
+        }
+        """
+        variables = {
+          "token": token,
+          "side_token": side_token,
+          "pair_address": pair_address,
+          "time_5min_ago": Utils.formatted_date(delta_seconds=-300) + 'Z',
+          "time_1h_ago": Utils.formatted_date(delta_seconds=-3600) + 'Z'
+        }
+
+        _log("Variables", variables)
+
+        payload = {
+          "query": query,
+          "variables": variables
+        }
+        
+        response_data = self._fetch(
+            url=self.eap_url, 
+            method="post", 
+            data=json.dumps(payload),
+        )
+        
+        try:
+            _log("BitQuery", response_data)
+            return response_data["data"]["Solana"]["DEXTradeByTokens"]
+        except (KeyError, TypeError) as e:
+            _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
+            return []
+
     # --------------------------
     # Utils
     # --------------------------
