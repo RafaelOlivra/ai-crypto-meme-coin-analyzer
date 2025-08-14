@@ -145,12 +145,13 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
             return None
     
-    # @cache_handler.cache(ttl_s=3600)
+    @cache_handler.cache(ttl_s=3600)
     def get_gmgn_token_summary(
           self,
           token: str,
           pair_address: str,
-          side_token: str = "So11111111111111111111111111111111111111112"
+          side_token: str = "So11111111111111111111111111111111111111112",
+          time = None
         ) -> dict:
         """
         Retrieve a trading summary for a specific GMGN token in a given market.
@@ -167,6 +168,7 @@ class BitQuerySolana:
             token (str): Mint address of the GMGN token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
             side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
+            time (Any): The specific time to base the query on (default: None = Current time).
 
         Returns:
             dict: A dictionary containing the token's summary statistics, such as price,
@@ -262,12 +264,13 @@ class BitQuerySolana:
           }
         }
         """
+        
         variables = {
           "token": token,
           "pair_address": pair_address,
           "side_token": side_token,
-          "time_5min_ago": Utils.formatted_date(delta_seconds=-300),
-          "time_1h_ago": Utils.formatted_date(delta_seconds=-3600)
+          "time_5min_ago": Utils.formatted_date(time, delta_seconds=-300),
+          "time_1h_ago": Utils.formatted_date(time, delta_seconds=-3600)
         }
         
         _log("BitQuery", variables)
@@ -288,8 +291,8 @@ class BitQuerySolana:
             return response_data["data"]["Solana"]["DEXTradeByTokens"][0]
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
-            return []
-          
+            return {"error": str(e)}
+
     def get_gmgn_recent_token_trades(
           self,
           token: str,

@@ -117,7 +117,7 @@ class Utils:
                 (Currently supports 'display' and 'iso_date_only')
         Returns:
             str: The date string in the specified format.
-        """
+        """ 
         # Convert string to datetime object from isoformat
         if isinstance(_date, str):
             _date = datetime.fromisoformat(_date)
@@ -132,7 +132,7 @@ class Utils:
             return _date.strftime("%Y-%m-%d")
         else:
             # Return ISO format with full time precision (seconds, microseconds)
-            return _date.isoformat(timespec="seconds") + "Z"
+            return _date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     @staticmethod
     def to_date_string_recursive(items: list | dict, format="") -> list | dict:
@@ -206,12 +206,9 @@ class Utils:
 
         # Attempt to convert from isoformat
         try:
-            # If we have a string we convert it to a datetime object
             if isinstance(_date, str):
                 _date = datetime.fromisoformat(_date)
-
-            # If we have a date object we convert it to a datetime object
-            if isinstance(_date, date):
+            elif isinstance(_date, date):
                 _date = datetime.combine(_date, datetime.min.time())
 
         # Attempt to convert from display format

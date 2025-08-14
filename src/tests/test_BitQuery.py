@@ -1,3 +1,4 @@
+import datetime
 import pytest
 import time
 
@@ -30,9 +31,10 @@ def test_get_recent_coin_transactions():
     
 def test_get_gmgn_coin_summary():
     bitquery = BitQuerySolana()
-    token = "8WCyzpzgo78S651NuHKiCYnjucQX8Etndp2cWeNZnPXh" # Pudgy Penguins
-    pair_address = "2e8zmWPrfKXFB9dDf7foECz4aLbmHTAucid8yCRPoyyA"
-    summary = bitquery.get_gmgn_token_summary(token, pair_address)
+    token = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
+    pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
+    time = "2025-08-14T15:30:39Z"
+    summary = bitquery.get_gmgn_token_summary(token, pair_address, time=time)
     _log("GMGN token summary fetched successfully.", summary)
     assert isinstance(summary, dict)
     assert summary['Trade']['Currency']['MintAddress'] == token
