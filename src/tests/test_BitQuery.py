@@ -39,3 +39,13 @@ def test_get_gmgn_coin_summary():
     assert summary['Trade']['Market']['MarketAddress'] == pair_address
     assert "sell_volume" in summary
     assert "sell_volume_5min" in summary
+    
+    
+def test_get_gmgn_recent_token_trades():
+    bitquery = BitQuerySolana()
+    token = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
+    pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
+    trades = bitquery.get_gmgn_recent_token_trades(token, pair_address)
+    _log("GMGN recent token trades fetched successfully.", trades)
+    assert isinstance(trades, list)
+    assert len(trades) > 0

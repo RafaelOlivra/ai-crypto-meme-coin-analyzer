@@ -5,7 +5,10 @@ import json
 from datetime import datetime, date, timedelta
 
 from services.AppData import AppData
+from services.log.Logger import _log
 
+DATETIME_DISPLAY_FORMAT = AppData().get_config("datetime_display_format")
+TIME_DISPLAY_FORMAT = AppData().get_config("time_display_format")
 
 class Utils:
     @staticmethod
@@ -86,7 +89,7 @@ class Utils:
         return requests.utils.quote(text)
 
     @staticmethod
-    def formatted_date(_date: date | datetime | str | None = None, format="", delta_seconds: int = 0) -> str:
+    def formatted_date(_date: date | datetime | str | int | None = None, format="", delta_seconds: int = 0) -> str:
         """
         Get the current date in a specific format.
 
@@ -95,6 +98,7 @@ class Utils:
         """
         if not _date:
             _date = datetime.now()
+            
         _date = Utils.to_datetime(_date)
 
         if delta_seconds:
@@ -123,12 +127,12 @@ class Utils:
             _date = datetime.combine(_date, datetime.min.time())
 
         if format == "display":
-            return _date.strftime(AppData().get_config("datetime_display_format"))
+            return _date.strftime(DATETIME_DISPLAY_FORMAT)
         elif format == "iso_date_only":
             return _date.strftime("%Y-%m-%d")
         else:
             # Return ISO format with full time precision (seconds, microseconds)
-            return _date.isoformat(timespec="seconds")
+            return _date.isoformat(timespec="seconds") + "Z"
 
     @staticmethod
     def to_date_string_recursive(items: list | dict, format="") -> list | dict:
@@ -177,10 +181,10 @@ class Utils:
         if isinstance(_time, str):
             _time = datetime.fromisoformat(_time)
 
-        return str(_time.strftime(AppData().get_config("time_display_format")))
+        return str(_time.strftime(TIME_DISPLAY_FORMAT))
 
     @staticmethod
-    def to_datetime(_date: str | date) -> datetime:
+    def to_datetime(_date: str | date | datetime | int) -> datetime:
         """
         Convert a date string to a datetime object.
         By default, the date is assumed to be in iso format.
@@ -192,6 +196,14 @@ class Utils:
         Returns:
             datetime: The datetime object.
         """
+        # If already a datetime object, return as is
+        if isinstance(_date, datetime):
+            return _date
+        
+        # If it's an integer, convert it to a datetime object
+        if isinstance(_date, int):
+            return datetime.fromtimestamp(_date)
+
         # Attempt to convert from isoformat
         try:
             # If we have a string we convert it to a datetime object
@@ -205,7 +217,7 @@ class Utils:
         # Attempt to convert from display format
         except ValueError:
             _date = datetime.strptime(
-                _date, AppData().get_config(f"datetime_display_format")
+                str(_date), DATETIME_DISPLAY_FORMAT
             )
 
         return _date

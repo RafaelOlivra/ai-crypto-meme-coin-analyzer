@@ -145,8 +145,13 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
             return None
     
-    @cache_handler.cache(ttl_s=3600)
-    def get_gmgn_token_summary(self, token: str, pair_address: str, side_token: str = "So11111111111111111111111111111111111111112"):
+    # @cache_handler.cache(ttl_s=3600)
+    def get_gmgn_token_summary(
+          self,
+          token: str,
+          pair_address: str,
+          side_token: str = "So11111111111111111111111111111111111111112"
+        ) -> dict:
         """
         Retrieve a trading summary for a specific GMGN token in a given market.
 
@@ -259,13 +264,13 @@ class BitQuerySolana:
         """
         variables = {
           "token": token,
-          "side_token": side_token,
           "pair_address": pair_address,
-          "time_5min_ago": Utils.formatted_date(delta_seconds=-300) + 'Z',
-          "time_1h_ago": Utils.formatted_date(delta_seconds=-3600) + 'Z'
+          "side_token": side_token,
+          "time_5min_ago": Utils.formatted_date(delta_seconds=-300),
+          "time_1h_ago": Utils.formatted_date(delta_seconds=-3600)
         }
-
-        _log("Variables", variables)
+        
+        _log("BitQuery", variables)
 
         payload = {
           "query": query,
@@ -281,6 +286,82 @@ class BitQuerySolana:
         try:
             _log("BitQuery", response_data)
             return response_data["data"]["Solana"]["DEXTradeByTokens"][0]
+        except (KeyError, TypeError) as e:
+            _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
+            return []
+          
+    def get_gmgn_recent_token_trades(
+          self,
+          token: str,
+          pair_address: str,
+          side_token: str = "So11111111111111111111111111111111111111112"
+        ):
+        """
+        Get recent trades for the GMGN token.
+
+        Args:
+            token (str): Mint address of the GMGN token to analyze (base token).
+            pair_address (str): Mint address of the specific market pair/liquidity pool.
+            side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
+
+        Returns:
+            dict: A dictionary containing the token's summary statistics, such as price,
+                  volume, liquidity, and other market indicators.
+        """
+        query = """
+        query Q($token: String!, $side_token: String!) {
+          Solana {
+            DEXTradeByTokens(
+              where: {Trade: {Currency: {MintAddress: {is: $token}}, Side: {Currency: {MintAddress: {is: $side_token}}}, Dex: {ProgramAddress: {}}}, Transaction: {Result: {Success: true}}}
+            ) {
+              Block {
+                Time
+              }
+              Trade {
+                Currency {
+                  Name
+                  Symbol
+                }
+                Amount
+                PriceAgainstSideCurrency: Price
+                PriceInUSD
+                Side {
+                  Currency {
+                    Name
+                    Symbol
+                  }
+                  Amount
+                  Type
+                }
+              }
+              Transaction {
+                Maker: Signer
+                Signature
+              }
+            }
+          }
+        }
+        """
+        variables = {
+          "token": token,
+          "pair_address": pair_address,
+          "side_token": side_token
+        }
+
+        payload = {
+          "query": query,
+          "variables": variables
+        }
+        
+        response_data = self._fetch(
+            url=self.eap_url, 
+            method="post", 
+            data=json.dumps(payload),
+        )
+        
+        try:
+            _log("BitQuery", response_data)
+            return response_data["data"]["Solana"]["DEXTradeByTokens"]
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
             return []
