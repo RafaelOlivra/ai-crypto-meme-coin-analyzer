@@ -9,6 +9,7 @@ package.zip
 __pycache__
 Caddyfile
 *.temp
+*.tmp
 .run.powershell
 /data/.storage/
 /data/.log/

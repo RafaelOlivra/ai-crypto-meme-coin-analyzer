@@ -8,7 +8,7 @@ from typing import Any, Union, Optional, Dict, List
 from src.services.log.Logger import _log
 from services.AppData import AppData
 from lib.Utils import Utils
-
+from lib.LocalCache import cache_handler
 
 class BitQuerySolana:
     """
@@ -25,6 +25,7 @@ class BitQuerySolana:
         self.eap_url = "https://streaming.bitquery.io/eap"
         self.session = requests.Session()
 
+    @cache_handler.cache(ttl_s=1)
     def get_recent_coin_transactions(self, mint_address: str, limit: int = 10) -> List[Dict]:
         """
         Get the most recent transactions for a Solana coin.
@@ -92,6 +93,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
             return []
 
+    @cache_handler.cache(ttl_s=3600)
     def get_mint_address_by_name(self, coin_name: str) -> Optional[str]:
         """
         Get the mint address for a Solana coin based on its name or symbol.
@@ -143,20 +145,33 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
             return None
     
+    @cache_handler.cache(ttl_s=3600)
     def get_gmgn_token_summary(self, token: str, pair_address: str, side_token: str = "So11111111111111111111111111111111111111112"):
         """
-        Get the summary for the GMGN token trading against a side token in a specific market.
-        
+        Retrieve a trading summary for a specific GMGN token in a given market.
+
+        In the context of GMGN (a Solana-based token analytics/trading platform):
+        - `token` is the **mint address** of the token you want to analyze (the "base token").
+        - `pair_address` is the **mint address of the liquidity pool or market pair**
+          in which the token is traded.
+        - `side_token` is the **mint address of the counter or quote token** 
+          that the base token is traded against (e.g., USDC, SOL). 
+          By default, this is set to wrapped SOL (`So11111111111111111111111111111111111111112`).
+
         Args:
-            token (str): The mint address of the GMGN token.
-            side_token (str): The mint address of the side token (e.g., USDC).
-            pair_address (str): The mint address of the trading pair.
+            token (str): Mint address of the GMGN token to analyze (base token).
+            pair_address (str): Mint address of the specific market pair/liquidity pool.
+            side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
+
+        Returns:
+            dict: A dictionary containing the token's summary statistics, such as price,
+                  volume, liquidity, and other market indicators.
         """
         query = """
-          query MyQuery($token: String!, $side_token: String!, $pair_address: String!, $time_5min_ago: DateTime!, $time_1h_ago: DateTime!) {
+          query Q($token: String!, $side_token: String!, $pair_address: String!, $time_5min_ago: DateTime!, $time_1h_ago: DateTime!) {
           Solana(dataset: realtime) {
             DEXTradeByTokens(
-              where: {Transaction: {Result: {Success: true}}, Trade: {Currency: {MintAddress: {is: $token}}, Side: {Currency: {MintAddress: {is: $side_token}}}, Market: {MarketAddress: {is: $pair_address}}}, Block: {Time: {since: $time_1h_ago}}}
+              where: { Transaction: { Result: { Success: true } }, Trade: { Currency: { MintAddress: { is: $token }}, Side: {Currency: {MintAddress: {is: $side_token}}}, Market: {MarketAddress: {is: $pair_address}}}, Block: {Time: {since: $time_1h_ago}}}
             ) {
               Trade {
                 Currency {
@@ -265,7 +280,7 @@ class BitQuerySolana:
         
         try:
             _log("BitQuery", response_data)
-            return response_data["data"]["Solana"]["DEXTradeByTokens"]
+            return response_data["data"]["Solana"]["DEXTradeByTokens"][0]
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
             return []
@@ -302,7 +317,6 @@ class BitQuerySolana:
           _log(f"Error generating BitQuery access token: {e}", level="ERROR")
           return None
           
-    @st.cache_data(ttl=86400)
     def _fetch(_self, url: str, method: str = "get", params: Optional[dict] = None, data: Optional[Any] = None, headers: Optional[dict] = None):
         """
         Fetches data from the specified URL using a common API call.

@@ -14,27 +14,28 @@ def test_get_access_token():
 
 def test_get_mint_address_by_name():
     bitquery = BitQuerySolana()
-    mint_address = bitquery.get_mint_address_by_name('doge')
-    _log("Doge coin mint address fetched successfully.", mint_address)
+    mint_address = bitquery.get_mint_address_by_name('Pudgy Penguins')
+    _log("Pudgy Penguins mint address fetched successfully.", mint_address)
     assert isinstance(mint_address, str)
-    assert mint_address == "9AiGiG5NPomL6QDmHQPKUYusBuBHk3LCQ7Scgxbpump"
+    assert mint_address == "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
     time.sleep(1)
     
 def test_get_recent_coin_transactions():
     bitquery = BitQuerySolana()
-    mint_address = '9AiGiG5NPomL6QDmHQPKUYusBuBHk3LCQ7Scgxbpump' # Doge
+    mint_address = '2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv'
     transactions = bitquery.get_recent_coin_transactions(mint_address, limit=3)
-    _log("Recent transactions fetched successfully.", transactions)
+    _log("Pudgy Penguins recent transactions fetched successfully.", transactions)
     assert isinstance(transactions, list)
     assert len(transactions) == 3
     
 def test_get_gmgn_coin_summary():
     bitquery = BitQuerySolana()
-    token = "AMekwDHTH33p6K6J8gL2wdwNjNF8kV2WoYxAaQAHmoon"
-    pair_address = "CXPQ4WupUBZuXz6Yw56S5a3PJDq7A1MMZ5bM3mB6KrSE"
-    summary = bitquery.get_gmgn_token_summary(token, side_token, pair_address)
+    token = "8WCyzpzgo78S651NuHKiCYnjucQX8Etndp2cWeNZnPXh" # Pudgy Penguins
+    pair_address = "2e8zmWPrfKXFB9dDf7foECz4aLbmHTAucid8yCRPoyyA"
+    summary = bitquery.get_gmgn_token_summary(token, pair_address)
     _log("GMGN token summary fetched successfully.", summary)
     assert isinstance(summary, dict)
-    assert "start" in summary
-    assert "min5" in summary
-    assert "end" in summary
+    assert summary['Trade']['Currency']['MintAddress'] == token
+    assert summary['Trade']['Market']['MarketAddress'] == pair_address
+    assert "sell_volume" in summary
+    assert "sell_volume_5min" in summary
