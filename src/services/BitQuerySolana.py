@@ -16,7 +16,6 @@ class BitQuerySolana:
     """
 
     def __init__(self, api_key=None):
-        # Set the API key, either from the environment or directly from the parameter
         self.client_id = api_key or AppData().get_api_key("bitquery_client_id")
         self.client_secret = api_key or AppData().get_api_key("bitquery_client_secret")
 
@@ -185,6 +184,10 @@ class BitQuerySolana:
                   Name
                   MintAddress
                   Symbol
+                  UpdateAuthority
+                  IsMutable
+                  Fungible
+                  Wrapped
                 }
                 start: PriceInUSD(minimum: Block_Time)
                 min5: PriceInUSD(
