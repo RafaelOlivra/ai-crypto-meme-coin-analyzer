@@ -89,47 +89,6 @@ class SolanaTokenSummary:
     def _check_nomint(self, mint_info: dict) -> bool:
         return mint_info.get("mintAuthority") is None
 
-    def _check_burn_percentage(self, mint_address: str, supply: Decimal) -> Decimal:
-        if supply <= 0:
-            return Decimal(0)
-
-        burn_wallets = {
-            "1nc1nerator11111111111111111111111111111111",
-            "11111111111111111111111111111111"
-        }
-
-        largest_accounts = self._get_largest_accounts(mint_address)
-        burnt_amount = Decimal(0)
-
-        for acc in largest_accounts:
-            if acc["address"] in burn_wallets:
-                burnt_amount += Decimal(acc["uiAmount"])
-
-        return (burnt_amount / supply) * 100
-
-    def _calculate_holder_concentration(self, mint_address: str, supply: Decimal) -> Dict[str, Decimal]:
-        if supply <= 0:
-            return {"Top1HolderPercent": Decimal(0), "Top5HolderPercent": Decimal(0)}
-
-        burn_wallets = {
-            "1nc1nerator11111111111111111111111111111111",
-            "11111111111111111111111111111111"
-        }
-
-        largest_accounts = [
-            acc for acc in self._get_largest_accounts(mint_address)
-            if acc["address"] not in burn_wallets
-        ]
-
-        top1 = Decimal(largest_accounts[0]["uiAmount"]) / supply * 100 if largest_accounts else Decimal(0)
-        top5_sum = sum(Decimal(acc["uiAmount"]) for acc in largest_accounts[:5])
-        top5 = (top5_sum / supply) * 100
-
-        return {
-            "top1_holder_percent": round(top1, 2),
-            "top5_holder_percent": round(top5, 2)
-        }
-
     # --------------------------
     # Dexscreener Info
     # --------------------------
@@ -190,7 +149,7 @@ class SolanaTokenSummary:
             pair_address (str): The liquidity pool / pair address for price & volume info.
 
         Returns:
-            dict: A dictionary containing token security, burn info, liquidity, 
+            dict: A dictionary containing token security, liquidity, 
                 price, holder concentration, and extra Dexscreener data.
         """
         # -- Solana network data
@@ -200,7 +159,6 @@ class SolanaTokenSummary:
 
         supply = self._get_token_supply(mint_address)
         nomint = self._check_nomint(mint_info)
-        concentration = self._calculate_holder_concentration(mint_address, supply)
         
         # -- Birdeye data
         be_security = self._get_birdeye_token_security(mint_address)
