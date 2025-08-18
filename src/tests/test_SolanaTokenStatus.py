@@ -16,10 +16,9 @@ def test_get_birdeye_token_security():
     solana = SolanaTokenStatus()
     security_info = solana._get_birdeye_token_security("2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv")
     assert isinstance(security_info, dict)
-    assert "is_honeypot" in security_info
-    assert "buy_tax" in security_info
-    assert "sell_tax" in security_info
-    assert "is_blacklisted" in security_info
+    assert "freezeAuthority" in security_info
+    assert "nonTransferable" in security_info
+    assert "isTrueToken" in security_info
 
 def test_get_dexscreener_token_pair_info():
     solana = SolanaTokenStatus()
@@ -35,7 +34,7 @@ def test_get_dexscreener_token_pair_info():
 
 def test_get_status():
     solana = SolanaTokenStatus()
-    status = solana.get_status(
+    status = solana.get_token_summary(
         "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump", # BILLY
         "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ" # GMGN Pool
     )

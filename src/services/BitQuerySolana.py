@@ -1,7 +1,7 @@
-import os
 import json
+from numpy import record
 import requests
-import streamlit as st
+import pandas as pd
 
 from typing import Any, Union, Optional, Dict, List
 
@@ -9,6 +9,8 @@ from src.services.log.Logger import _log
 from services.AppData import AppData
 from lib.Utils import Utils
 from lib.LocalCache import cache_handler
+
+DEFAULT_CACHE_TTL = 10
 
 class BitQuerySolana:
     """
@@ -92,7 +94,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
             return []
 
-    @cache_handler.cache(ttl_s=3600)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_mint_address_by_name(self, coin_name: str) -> Optional[str]:
         """
         Get the mint address for a Solana coin based on its name or symbol.
@@ -144,14 +146,14 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
             return None
     
-    @cache_handler.cache(ttl_s=3600)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_gmgn_token_summary(
           self,
           token: str,
           pair_address: str,
           side_token: str = "So11111111111111111111111111111111111111112",
-          time = None
-        ) -> dict:
+          time: int = 0
+        ) -> Optional[Dict]:
         """
         Retrieve a trading summary for a specific GMGN token in a given market.
 
@@ -167,7 +169,7 @@ class BitQuerySolana:
             token (str): Mint address of the GMGN token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
             side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
-            time (Any): The specific time to base the query on (default: None = Current time).
+            time (int): The specific time to base the query on (default: 0 = Current time).
 
         Returns:
             dict: A dictionary containing the token's summary statistics, such as price,
@@ -273,7 +275,7 @@ class BitQuerySolana:
           "pair_address": pair_address,
           "side_token": side_token,
           "time_5min_ago": Utils.formatted_date(time, delta_seconds=-300),
-          "time_1h_ago": Utils.formatted_date(time, delta_seconds=-3600)
+          "time_1h_ago": Utils.formatted_date(time, delta_seconds=-DEFAULT_CACHE_TTL)
         }
         
         _log("BitQuery", variables)
@@ -290,11 +292,55 @@ class BitQuerySolana:
         )
         
         try:
-            _log("BitQuery", response_data)
             return response_data["data"]["Solana"]["DEXTradeByTokens"][0]
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
-            return {"error": str(e)}
+            return None
+
+    def get_gmgn_token_summary_df(
+          self,
+          token: str,
+          pair_address: str,
+          side_token: str = "So11111111111111111111111111111111111111112",
+          time: int = 0
+        ) -> pd.DataFrame:
+        """
+        Get a summary DataFrame for the GMGN token.
+
+        Args:
+            token (str): Mint address of the GMGN token to analyze (base token).
+            pair_address (str): Mint address of the specific market pair/liquidity pool.
+            side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
+            time (int): The specific time to base the query on (default: 0 = Current time).
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the token's summary statistics.
+        """
+        summary = self.get_gmgn_token_summary(token, pair_address, side_token, time)
+        
+        # Flatten the Trade section
+        flat = {}
+        trade = summary.get("Trade", {})
+        for key, val in trade.items():
+            if isinstance(val, dict):
+                # Nested dict: flatten further
+                for sub_key, sub_val in val.items():
+                    flat[f"trade_{key}_{sub_key}"] = sub_val
+            else:
+                flat[f"trade_{key}"] = val
+        
+        # Add top-level fields (like buy_volume, sellers, etc.)
+        for key, val in summary.items():
+            if key != "Trade":
+                flat[key] = val
+        
+        # Lowercase all columns
+        flat = {k.lower(): v for k, v in flat.items()}
+          
+        # Adapt to a pandas Dataframe
+        df = pd.DataFrame([flat])
+        return df
+      
 
     def get_gmgn_recent_token_trades(
           self,
@@ -371,6 +417,81 @@ class BitQuerySolana:
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
             return []
+
+    def get_gmgn_recent_token_trades_df(
+          self,
+          token: str,
+          pair_address: str,
+          side_token: str = "So11111111111111111111111111111111111111112"
+        ) -> pd.DataFrame:
+        """
+        Get recent trades for the GMGN token as a DataFrame.
+        
+        Args:
+            token (str): Mint address of the GMGN token to analyze (base token).
+            pair_address (str): Mint address of the specific market pair/liquidity pool.
+            side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the token's recent trade data.
+        """
+        trades = self.get_gmgn_recent_token_trades(
+            token=token,
+            pair_address=pair_address,
+            side_token=side_token
+        )
+
+        def flatten_trade_record(record):
+            flat = {}
+
+            # Block info
+            block = record.get("Block", {})
+            for k, v in block.items():
+                flat[f"block_{k}"] = v
+
+            # Trade info
+            trade = record.get("Trade", {})
+            for k, v in trade.items():
+                if isinstance(v, dict):
+                    for sub_k, sub_v in v.items():
+                        # Side.Currency nested dict
+                        if sub_k == "Side" and isinstance(sub_v, dict):
+                            side = sub_v
+                            for side_k, side_v in side.items():
+                                if isinstance(side_v, dict):
+                                    for subsub_k, subsub_v in side_v.items():
+                                        flat[f"trade_side_{subsub_k}"] = subsub_v
+                                else:
+                                    flat[f"trade_side_{side_k}"] = side_v
+                        elif isinstance(sub_v, dict):
+                            for subsub_k, subsub_v in sub_v.items():
+                                flat[f"trade_{k}_{subsub_k}"] = subsub_v
+                        else:
+                            flat[f"trade_{k}_{sub_k}"] = sub_v
+                else:
+                    flat[f"trade_{k}"] = v
+
+            # Transaction info
+            transaction = record.get("Transaction", {})
+            for k, v in transaction.items():
+                flat[f"transaction_{k}"] = v
+
+            # Lowercase all column names
+            flat = {k.lower(): v for k, v in flat.items()}
+
+            return flat
+
+        # Flatten all records and create DataFrame
+        df = pd.DataFrame([flatten_trade_record(r) for r in trades])
+
+        # Convert numeric columns from strings to float where possible
+        for col in df.columns:
+            try:
+                df[col] = df[col].astype(float)
+            except (ValueError, TypeError):
+                pass
+
+        return df
 
     # --------------------------
     # Utils

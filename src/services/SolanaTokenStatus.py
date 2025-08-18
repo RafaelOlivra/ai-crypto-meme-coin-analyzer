@@ -1,5 +1,6 @@
 import json
 import requests
+import pandas as pd
 from decimal import Decimal
 from typing import Optional, Dict, Any, List
 
@@ -7,10 +8,11 @@ from services.AppData import AppData
 from lib.LocalCache import cache_handler
 from src.services.log.Logger import _log
 
+DEFAULT_CACHE_TTL = 60
 
 class SolanaTokenStatus:
     """
-    Retrieves Solana token status:
+    Retrieves Solana token summary:
     - NoMint (mint authority revoked)
     - Blacklist & scam status (via Birdeye — kept for reference, not used here)
     - Burn percentage (supply in burn wallets)
@@ -23,7 +25,7 @@ class SolanaTokenStatus:
         self.session = requests.Session()
         self.birdeye_api_key = AppData().get_api_key("birdeye_api_key")
 
-    @cache_handler.cache(ttl_s=1800)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _fetch_solana_rpc(self, method: str, params: list) -> dict:
         payload = {
             "jsonrpc": "2.0",
@@ -39,6 +41,7 @@ class SolanaTokenStatus:
             _log(f"Solana RPC fetch error: {e}", level="ERROR")
             return {}
 
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     # @cache_handler.cache(ttl_s=60)
     def _fetch_birdeye_api(self, method: str, params: dict) -> dict:
         url = f"https://public-api.birdeye.so/{method}"
@@ -56,7 +59,7 @@ class SolanaTokenStatus:
             _log(f"Birdeye fetch error: {e}", level="ERROR")
             return {}
 
-    @cache_handler.cache(ttl_s=60)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _fetch_dexscreener_api(self, mint_address: str) -> dict:
         url = f"https://api.dexscreener.com/latest/dex/tokens/{mint_address}"
         try:
@@ -155,10 +158,18 @@ class SolanaTokenStatus:
     # --------------------------
     
     def _get_birdeye_token_security(self, mint_address: str) -> Optional[dict]:
+        """
+        Get the token security information from the Birdeye API.
+        @see https://docs.birdeye.so/reference/get-defi-token_security
+        """
         data = self._fetch_birdeye_api("defi/token_security", {"address": mint_address})
         return data.get("data") if data.get("success") else None
 
-    def _get_birdeye_liquidity(self, pair_address: str) -> Optional[dict]:
+    def _get_birdeye_pair_overview(self, pair_address: str) -> Optional[dict]:
+        """
+        Get the overview information for a specific trading pair from the Birdeye API.
+        @see https://docs.birdeye.so/reference/get-defi-v3-pair-overview-single
+        """
         data = self._fetch_birdeye_api(
             "defi/v3/pair/overview/single",
             {"address": pair_address, "ui_amount_mode": "scaled"}
@@ -172,37 +183,109 @@ class SolanaTokenStatus:
     # Aggregated Info
     # --------------------------
     
-    def get_status(self, mint_address: str, pair_address: str = None) -> Dict[str, Any]:
+    def get_token_summary(
+        self, 
+        mint_address: str, 
+        pair_address: str
+    ) -> dict[str, Any]:
+        """
+        Retrieve token summary and security overview from Birdeye.
+
+        Args:
+            mint_address (str): The mint address of the token to analyze.
+            pair_address (str): The liquidity pool / pair address for price & volume info.
+
+        Returns:
+            dict: A dictionary containing token security, burn info, liquidity, price, and holder concentration.
+        """
+        # Get mint info
         mint_info = self._get_mint_info(mint_address)
         if not mint_info:
             return {"error": "Mint address not found"}
 
+        # Token supply and mint authority check
         supply = self._get_token_supply(mint_address)
-        burnt_percent = self._check_burn_percentage(mint_address, supply)
         nomint = self._check_nomint(mint_info)
+        
+        # Token security info (Birdeye)
+        security = self._get_birdeye_token_security(mint_address)
+        if not security:
+            return {"error": "Token security info not found"}
 
-        # Dexscreener liquidity & price data
-        if pair_address:
-            main_pair = self._get_dexscreener_token_pair_info(mint_address, pair_address)
-        else:
-            pairs = self._get_dexscreener_token_info(mint_address)
-            main_pair = pairs[0] if pairs else None
+        # Pair overview (liquidity, price, volume)
+        overview = self._get_birdeye_pair_overview(pair_address)
+        if not overview:
+            return {"error": "Pair overview not found"}
+        
+        # Calculate BurntPercent: remaining tokens not held by top holders, creator, or owner
+        total_supply = float(security.get("totalSupply", 0))
+        top10 = float(security.get("top10HolderBalance", 0))
+        creator = float(security.get("creatorBalance", 0))
+        owner = float(security.get("ownerBalance") or 0)
+        held = top10 + creator + owner
+        top_holders_percent = round(max((total_supply - held) / total_supply * 100, 0), 2) if total_supply > 0 else 0.0
 
-        liquidity_usd = main_pair.get("liquidity", {}).get("usd") if main_pair else None
-        price_usd = main_pair.get("priceUsd") if main_pair else None
-        volume_24h_usd = main_pair.get("volume", {}).get("h24") if main_pair else None
-
-        # Holder concentration
+        # Holder concentration metrics
         concentration = self._calculate_holder_concentration(mint_address, supply)
 
         return {
-            "NoMint": nomint,
-            "BurntPercent": float(round(burnt_percent, 2)),
-            "FreezeAuthority": mint_info.get("freezeAuthority") is not None,
-            "DEXPaid": liquidity_usd is not None,
-            "LiquidityUSD": liquidity_usd,
-            "PriceUSD": price_usd,
-            "Volume24hUSD": volume_24h_usd,
-            "UniqueWallets24h": None,
+            # Basic token info
+            "no_mint": nomint,
+            "top_holders_percent": top_holders_percent,
+
+            # Security & creator info
+            "creator_address": security.get("creatorAddress"),
+            "creation_tx": security.get("creationTx"),
+            "creation_time": security.get("creationTime"),
+            "mint_tx": security.get("mintTx"),
+            "mint_time": security.get("mintTime"),
+            "total_supply": float(security.get("totalSupply", 0)),
+            "mutable_metadata": security.get("mutableMetadata"),
+            "freeze_authority": security.get("freezeAuthority") is not None,
+            "top10_holder_percent": round(float(security.get("top10HolderPercent", 0)) * 100, 2),
+            "creator_percentage": float(security.get("creatorPercentage", 0)),
+            "non_transferable": security.get("nonTransferable"),
+            "fake_token": security.get("fakeToken"),
+            "is_true_token": security.get("isTrueToken"),
+            "pre_market_holder": security.get("preMarketHolder"),
+            "transfer_fee_enable": security.get("transferFeeEnable"),
+
+            # Pair / market info
+            "liquidity_usd": overview.get("liquidity"),
+            "price_usd": overview.get("price"),
+            "volume_24h_usd": overview.get("volume_24h"),
+            "unique_wallets_24h": overview.get("unique_wallet_24h"),
+
+            # Holder concentration
             **concentration
         }
+
+
+
+    def get_token_summary_df(
+        self, 
+        mint_address: str, 
+        pair_address: str
+    ) -> pd.DataFrame:
+        """
+        Get token summary as a pandas DataFrame.
+
+        Args:
+            mint_address (str): The mint address of the token.
+            pair_address (str): The pair / liquidity pool address.
+
+        Returns:
+            pd.DataFrame: DataFrame with a single row containing token summary info.
+                        If an error occurs, returns a DataFrame with an 'error' column.
+        """
+        status = self.get_token_summary(mint_address, pair_address)
+        if "error" in status:
+            return pd.DataFrame({"error": [status["error"]]})
+
+        # Wrap the status dict into a single-row DataFrame
+        df = pd.DataFrame([status])
+
+        # Lowercase all column names
+        df.columns = [c.lower() for c in df.columns]
+
+        return df

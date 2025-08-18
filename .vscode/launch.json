@@ -8,7 +8,7 @@
             "module": "streamlit",
             "args": [
                 "run",
-                "./app/0_🏠_Home.py"
+                "./src/0_🏠_Home.py"
             ],
             "console": "integratedTerminal",
             "justMyCode": false,
