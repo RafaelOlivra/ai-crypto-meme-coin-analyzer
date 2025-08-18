@@ -3,7 +3,7 @@ from dotenv import load_dotenv, find_dotenv
 
 from services.AppData import AppData
 from services.BitQuerySolana import BitQuerySolana
-from services.SolanaTokenStatus import SolanaTokenStatus
+from services.SolanaTokenSummary import SolanaTokenSummary
 
 # --------------------------
 # Configurations
@@ -32,7 +32,7 @@ def Home():
     st.title("🐸 Meme Coin Analyzer")
     
     bitquery = BitQuerySolana()
-    solana = SolanaTokenStatus()
+    solana = SolanaTokenSummary()
     
     addresses = {
         "BILLY": {
@@ -61,16 +61,19 @@ def Home():
     token = addresses[token_selector]["mint"]
     pair_address = addresses[token_selector]["pair"]
 
-    st.markdown("### Token Summary (BirdEye)")
+    st.markdown("### Token Summary (BirdEye+Dexscreener)")
     df_status = solana.get_token_summary_df(token, pair_address)
-    st.dataframe(df_status.T.rename_axis("BirdEye Summary"), use_container_width=True)
+    st.dataframe(df_status.T.rename_axis("Agg Token Summary"), use_container_width=True)
 
     st.markdown("### Token Summary (BitQuery)")
-    df_summary = bitquery.get_gmgn_token_summary_df(token, pair_address)
+    df_summary = bitquery.get_gmgn_token_pair_summary_df(token, pair_address)
     st.dataframe(df_summary.T.rename_axis("BitQuery Summary"), use_container_width=True)
+    
+    st.markdown("### Token Summary (DexScreener)")
+    
 
     st.markdown("### Recent Trades  (BitQuery)")
-    st.dataframe(bitquery.get_gmgn_recent_token_trades_df(token, pair_address), use_container_width=True)
+    st.dataframe(bitquery.get_gmgn_recent_token_pair_trades_df(token, pair_address), use_container_width=True)
 
     # col1, col2 = st.columns(2)
     # with col1:

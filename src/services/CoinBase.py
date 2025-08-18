@@ -1,13 +1,12 @@
-import os
-import json
 import requests
-import streamlit as st
 
 from typing import Any, Union, Optional, Dict, List
 
 from services.log.Logger import _log
 from services.AppData import AppData
+from lib.LocalCache import cache_handler
 
+DEFAULT_CACHE_TTL = 86400
 
 class CoinBase:
     """
@@ -23,7 +22,7 @@ class CoinBase:
         self.base_url = ""
         self.session = requests.Session()
 
-    @st.cache_data(ttl=86400)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _fetch(_self, url: str, method: str = "get", params: Optional[dict] = None, data: Optional[Any] = None, headers: Optional[dict] = None):
         """
         Fetches data from the specified URL using a common API call.

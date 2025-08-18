@@ -10,7 +10,7 @@ from services.AppData import AppData
 from lib.Utils import Utils
 from lib.LocalCache import cache_handler
 
-DEFAULT_CACHE_TTL = 10
+DEFAULT_CACHE_TTL = 5
 
 class BitQuerySolana:
     """
@@ -27,7 +27,7 @@ class BitQuerySolana:
         self.session = requests.Session()
 
     @cache_handler.cache(ttl_s=1)
-    def get_recent_coin_transactions(self, mint_address: str, limit: int = 10) -> List[Dict]:
+    def get_recent_coin_trades(self, mint_address: str, limit: int = 10) -> List[Dict]:
         """
         Get the most recent transactions for a Solana coin.
 
@@ -43,7 +43,10 @@ class BitQuerySolana:
         query ($mintAddress: String!, $limit: Int!) {
           Solana(network: solana) {
             Transfers(
-              where: { Transfer: { Currency: { MintAddress: { is: $mintAddress}}}},
+              where: {
+                Transfer: { Currency: { MintAddress: { is: $mintAddress}}},
+                Transaction: { Result: { Success: true }}
+              },
               limit: {count: $limit}
             ) {
               Transfer {
@@ -66,6 +69,9 @@ class BitQuerySolana:
               }
               Transaction {
                 Signature
+                Fee
+                FeeInUSD
+                FeePayer
               }
             }
           }
@@ -147,7 +153,7 @@ class BitQuerySolana:
             return None
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def get_gmgn_token_summary(
+    def get_gmgn_token_pair_summary(
           self,
           token: str,
           pair_address: str,
@@ -297,7 +303,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
             return None
 
-    def get_gmgn_token_summary_df(
+    def get_gmgn_token_pair_summary_df(
           self,
           token: str,
           pair_address: str,
@@ -316,7 +322,7 @@ class BitQuerySolana:
         Returns:
             pd.DataFrame: A DataFrame containing the token's summary statistics.
         """
-        summary = self.get_gmgn_token_summary(token, pair_address, side_token, time)
+        summary = self.get_gmgn_token_pair_summary(token, pair_address, side_token, time)
         
         # Flatten the Trade section
         flat = {}
@@ -342,7 +348,7 @@ class BitQuerySolana:
         return df
       
 
-    def get_gmgn_recent_token_trades(
+    def get_gmgn_recent_token_pair_trades(
           self,
           token: str,
           pair_address: str,
@@ -389,6 +395,9 @@ class BitQuerySolana:
               Transaction {
                 Maker: Signer
                 Signature
+                Fee
+                FeeInUSD
+                FeePayer
               }
             }
           }
@@ -412,13 +421,13 @@ class BitQuerySolana:
         )
         
         try:
-            _log("BitQuery", response_data)
+            # _log("BitQuery", response_data)
             return response_data["data"]["Solana"]["DEXTradeByTokens"]
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
             return []
 
-    def get_gmgn_recent_token_trades_df(
+    def get_gmgn_recent_token_pair_trades_df(
           self,
           token: str,
           pair_address: str,
@@ -435,7 +444,7 @@ class BitQuerySolana:
         Returns:
             pd.DataFrame: A DataFrame containing the token's recent trade data.
         """
-        trades = self.get_gmgn_recent_token_trades(
+        trades = self.get_gmgn_recent_token_pair_trades(
             token=token,
             pair_address=pair_address,
             side_token=side_token

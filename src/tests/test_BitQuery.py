@@ -24,18 +24,18 @@ def test_get_mint_address_by_name():
 def test_get_recent_coin_transactions():
     bitquery = BitQuerySolana()
     mint_address = '2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv'
-    transactions = bitquery.get_recent_coin_transactions(mint_address, limit=3)
+    transactions = bitquery.get_recent_coin_trades(mint_address, limit=3)
     _log("Pudgy Penguins recent transactions fetched successfully.", transactions)
     assert isinstance(transactions, list)
     assert len(transactions) == 3
     
-def test_get_gmgn_coin_summary():
+def test_get_gmgn_token_pair_summary():
     bitquery = BitQuerySolana()
     token = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
     pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
     time = "2025-08-14T15:30:39Z"
-    summary = bitquery.get_gmgn_token_summary(token, pair_address, time=time)
-    _log("GMGN token summary fetched successfully.", summary)
+    summary = bitquery.get_gmgn_token_pair_summary(token, pair_address, time=time)
+    # _log("GMGN token summary fetched successfully.", summary)
     assert isinstance(summary, dict)
     assert summary['Trade']['Currency']['MintAddress'] == token
     assert summary['Trade']['Market']['MarketAddress'] == pair_address
@@ -47,7 +47,9 @@ def test_get_gmgn_recent_token_trades():
     bitquery = BitQuerySolana()
     token = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
     pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
-    trades = bitquery.get_gmgn_recent_token_trades(token, pair_address)
-    _log("GMGN recent token trades fetched successfully.", trades)
+    trades = bitquery.get_gmgn_recent_token_pair_trades(token, pair_address)
+    # _log("GMGN recent token trades fetched successfully.", trades)
+    _log(trades[0]['Transaction']['FeeInUSD'])
     assert isinstance(trades, list)
     assert len(trades) > 0
+    assert float(trades[0]['Transaction']['FeeInUSD']) > 0

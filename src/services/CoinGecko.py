@@ -1,9 +1,9 @@
-import os
-import json
 import requests
-import streamlit as st
 
 from typing import Any, Union, Optional, Dict, List
+from lib.LocalCache import cache_handler
+
+DEFAULT_CACHE_TTL = 60
 
 class CoinGecko:
     """
@@ -81,7 +81,7 @@ class CoinGecko:
 
         return self._fetch(f"/coins/{coin_id}", params=params)
 
-    @st.cache_data(ttl=86400)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _fetch(_self, url: str, params: Optional[dict] = None):
         """
         Fetches JSON data from the specified URL.
