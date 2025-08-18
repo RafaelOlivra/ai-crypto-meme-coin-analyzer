@@ -63,14 +63,14 @@ def Home():
 
     st.markdown("### Token Summary (BirdEye)")
     df_status = solana.get_token_summary_df(token, pair_address)
-    st.write(df_status.T.rename_axis("BirdEye Summary"))
+    st.dataframe(df_status.T.rename_axis("BirdEye Summary"), use_container_width=True)
 
     st.markdown("### Token Summary (BitQuery)")
     df_summary = bitquery.get_gmgn_token_summary_df(token, pair_address)
-    st.write(df_summary.T.rename_axis("BitQuery Summary"))
+    st.dataframe(df_summary.T.rename_axis("BitQuery Summary"), use_container_width=True)
 
     st.markdown("### Recent Trades  (BitQuery)")
-    st.write(bitquery.get_gmgn_recent_token_trades_df(token, pair_address))
+    st.dataframe(bitquery.get_gmgn_recent_token_trades_df(token, pair_address), use_container_width=True)
 
     # col1, col2 = st.columns(2)
     # with col1:

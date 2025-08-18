@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List
 
 from services.AppData import AppData
 from lib.LocalCache import cache_handler
-from src.services.log.Logger import _log
+from services.log.Logger import _log
 
 DEFAULT_CACHE_TTL = 60
 

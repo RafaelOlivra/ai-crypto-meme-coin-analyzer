@@ -4,7 +4,7 @@ import streamlit as st
 
 from typing import Any, Union
 
-from src.services.log.Logger import _log
+from services.log.Logger import _log
 
 
 class AppData:
