@@ -3,7 +3,6 @@ import json
 from lib.LocalCache import cache_handler
 
 from typing import Any, Union
-
 from services.log.Logger import _log
 
 DEFAULT_CACHE_TTL = 60

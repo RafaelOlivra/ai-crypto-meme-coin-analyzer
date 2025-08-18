@@ -42,22 +42,15 @@ def Home():
         "RIZZMASTER": {
             "mint": "2BpJpCW9LfSPbgsgNKcFoxz96Cs8J8NZsi6PZJcHpump",
             "pair": "Af5op3qJJ87sU4GJqjKX9isJEJGHkzHvxRQRoWmPCfxw"
+        },
+        "COINDESK": {
+            "mint": "8Kzsuu3Rpgo21aoyrxmU59dQT43QeEr429WnAPYHuL1q",
+            "pair": "BYQkNGjvPAutJuZ5jNPg7zYuZ2B3yoRJgUCH647HRycg"
         }
     }
 
     token_selector = st.selectbox("Select a token", options=list(addresses.keys()))
-
-    addresses = {
-        "BILLY": {
-            "mint": "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump",
-            "pair": "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
-        },
-        "RIZZMASTER": {
-            "mint": "2BpJpCW9LfSPbgsgNKcFoxz96Cs8J8NZsi6PZJcHpump",
-            "pair": "Af5op3qJJ87sU4GJqjKX9isJEJGHkzHvxRQRoWmPCfxw"
-        }
-    }
-
+    
     token = addresses[token_selector]["mint"]
     pair_address = addresses[token_selector]["pair"]
 

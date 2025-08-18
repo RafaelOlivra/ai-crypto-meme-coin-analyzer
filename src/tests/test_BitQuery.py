@@ -41,14 +41,23 @@ def test_get_gmgn_token_pair_summary():
     assert "sell_volume" in summary
     assert "sell_volume_5min" in summary
     
-    
 def test_get_gmgn_recent_token_trades():
     bitquery = BitQuerySolana()
     mint_address = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
-    pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
+    pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ" # GMGN
     trades = bitquery.get_gmgn_recent_token_pair_trades(mint_address, pair_address)
     # _log("GMGN recent token trades fetched successfully.", trades)
     _log(trades[0]['Transaction']['FeeInUSD'])
     assert isinstance(trades, list)
     assert len(trades) > 0
     assert float(trades[0]['Transaction']['FeeInUSD']) > 0
+    
+def test_get_gmgn_liquidity_pool():
+    bitquery = BitQuerySolana()
+    pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"  # BILLY-GMGN
+    liquidity_pool = bitquery.get_gmgn_liquidity_pool_for_pair(pair_address)
+    _log("GMGN liquidity pool fetched successfully.", liquidity_pool)
+    assert isinstance(liquidity_pool, dict)
+    assert liquidity_pool['Pool']['Market']['MarketAddress'] == pair_address
+    assert "Quote" in liquidity_pool['Pool']
+    assert "Base" in liquidity_pool['Pool']

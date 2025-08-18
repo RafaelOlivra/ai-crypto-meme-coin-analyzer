@@ -1,6 +1,7 @@
 import json
 import requests
 import pandas as pd
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional, Dict, Any, List
 
@@ -8,7 +9,7 @@ from services.AppData import AppData
 from lib.LocalCache import cache_handler
 from services.log.Logger import _log
 
-DEFAULT_CACHE_TTL = 30
+DEFAULT_CACHE_TTL = 60
 
 class SolanaTokenSummary:
     """
@@ -19,51 +20,10 @@ class SolanaTokenSummary:
         self.rpc_url = rpc_url or "https://api.mainnet-beta.solana.com"
         self.session = requests.Session()
         self.birdeye_api_key = AppData().get_api_key("birdeye_api_key")
-
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def _fetch_solana_rpc(self, method: str, params: list) -> dict:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": method,
-            "params": params
-        }
-        try:
-            response = self.session.post(self.rpc_url, json=payload)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            _log(f"Solana RPC fetch error: {e}", level="ERROR")
-            return {}
-
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def _fetch_birdeye_api(self, method: str, params: dict) -> dict:
-        url = f"https://public-api.birdeye.so/{method}"
-        headers = {
-            "x-chain": "solana",
-            "accept": "application/json",
-            "x-api-key": self.birdeye_api_key
-        }
-        try:
-            response = self.session.get(url, headers=headers, params=params)
-            _log(f"Birdeye API response for {method}:", response.json(), level="DEBUG")
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            _log(f"Birdeye fetch error: {e}", level="ERROR")
-            return {}
-
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def _fetch_dexscreener_api(self, mint_address: str) -> dict:
-        url = f"https://api.dexscreener.com/latest/dex/tokens/{mint_address}"
-        try:
-            response = self.session.get(url, timeout=10)
-            _log(f"Dexscreener", response.json(), level="DEBUG")
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            _log(f"Dexscreener fetch error: {e}", level="ERROR")
-            return {}
+        
+    # --------------------------
+    # Solana RPC info
+    # --------------------------
 
     def _get_mint_info(self, mint_address: str) -> Optional[dict]:
         data = self._fetch_solana_rpc("getAccountInfo", [mint_address, {"encoding": "jsonParsed"}])
@@ -85,9 +45,70 @@ class SolanaTokenSummary:
             return data["result"]["value"]
         except (KeyError, TypeError):
             return []
+    
+    def get_wallet_age(self, wallet_address: str) -> Dict[str, Any]:
+        """
+        Get the wallet age (days since first transaction).
+        Returns a dict with first_tx_time (datetime) and age_days (int).
+        """
+        before: Optional[str] = None
+        oldest_sig: Optional[str] = None
+
+        # Page through until we hit the oldest tx
+        while True:
+            data = self._fetch_solana_rpc(
+                "getSignaturesForAddress",
+                [wallet_address, {"limit": 1000, "before": before}]
+            )
+            signatures = data.get("result", [])
+            if not signatures:
+                break
+
+            oldest_sig = signatures[-1]["signature"]
+            before = oldest_sig  # paginate further
+
+            # If less than requested limit, we've reached the end
+            if len(signatures) < 1000:
+                break
+
+        if not oldest_sig:
+            return {"error": "No transactions found for this wallet."}
+
+        # Fetch transaction details to get blockTime
+        tx_data = self._fetch_solana_rpc("getTransaction", [oldest_sig, {"encoding": "json"}])
+        tx = tx_data.get("result", {})
+        block_time = tx.get("blockTime")
+
+        if block_time is None:
+            return {"error": "Could not fetch block time."}
+
+        first_tx_time = datetime.fromtimestamp(block_time, tz=timezone.utc)
+        now = datetime.now(timezone.utc)
+        age_days = (now - first_tx_time).days
+
+        return {
+            "first_tx_time": first_tx_time,
+            "age_days": age_days
+        }
 
     def _check_nomint(self, mint_info: dict) -> bool:
         return mint_info.get("mintAuthority") is None
+    
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def _fetch_solana_rpc(self, method: str, params: list) -> dict:
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": params
+        }
+        try:
+            response = self.session.post(self.rpc_url, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            _log(f"Solana RPC fetch error: {e}", level="ERROR")
+            return {}
 
     # --------------------------
     # Dexscreener Info
@@ -105,6 +126,17 @@ class SolanaTokenSummary:
             if pair.get("pairAddress") == pair_address:
                 return pair
         return None
+    
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def _fetch_dexscreener_api(self, mint_address: str) -> dict:
+        url = f"https://api.dexscreener.com/latest/dex/tokens/{mint_address}"
+        try:
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            _log(f"Dexscreener fetch error: {e}", level="ERROR")
+            return {}
 
     # --------------------------
     # Birdeye Info
@@ -130,8 +162,39 @@ class SolanaTokenSummary:
         if not data.get("success") or not data.get("data"):
             return None
         return data["data"]
-    
-    
+
+    def _get_birdeye_wallet_overview(self, wallet_address: str) -> Optional[dict]:
+        """
+        Get the wallet overview information for a specific wallet from the Birdeye API.
+        @see https://public-api.birdeye.so/wallet/v2/net-worth-details
+        """
+        data = self._fetch_birdeye_api(
+            "wallet/v2/net-worth-details",
+            {
+                "wallet": wallet_address,
+                "limit": 1
+            }
+        )
+        if not data.get("success") or not data.get("data"):
+            return None
+        return data["data"]
+
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def _fetch_birdeye_api(self, method: str, params: dict) -> dict:
+        url = f"https://public-api.birdeye.so/{method}"
+        headers = {
+            "x-chain": "solana",
+            "accept": "application/json",
+            "x-api-key": self.birdeye_api_key
+        }
+        try:
+            response = self.session.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            _log(f"Birdeye fetch error: {e}", level="ERROR")
+            return {}
+
     # --------------------------
     # Aggregated Info
     # --------------------------
@@ -152,13 +215,6 @@ class SolanaTokenSummary:
             dict: A dictionary containing token security, liquidity, 
                 price, holder concentration, and extra Dexscreener data.
         """
-        # -- Solana network data
-        mint_info = self._get_mint_info(mint_address)
-        if not mint_info:
-            return {"error": "Mint address not found"}
-
-        supply = self._get_token_supply(mint_address)
-        nomint = self._check_nomint(mint_info)
         
         # -- Birdeye data
         be_security = self._get_birdeye_token_security(mint_address)
@@ -168,7 +224,12 @@ class SolanaTokenSummary:
         be_overview = self._get_birdeye_pair_overview(pair_address)
         if not be_overview:
             return {"error": "Pair overview not found"}
-        
+
+        creator_address = be_security.get("creatorAddress", "")
+        be_wallet_overview = self._get_birdeye_wallet_overview(creator_address)
+        if not be_wallet_overview:
+            return {"error": "Wallet overview not found"}
+
         # Calculate BurntPercent-like metric
         be_total_supply = float(be_security.get("totalSupply", 0))
         be_top10 = float(be_security.get("top10HolderBalance", 0))
@@ -192,38 +253,50 @@ class SolanaTokenSummary:
 
         # Token age
         pair_created_at = dexscreener_info.get("pairCreatedAt")
-
         
+        # -- Solana network data
+        mint_info = self._get_mint_info(mint_address)
+        if not mint_info:
+            return {"error": "Mint address not found"}
+        nomint = self._check_nomint(mint_info)
+        wallet_age = self.get_wallet_age(creator_address)
+
         # -- Aggregate response
         return {
             # Basic token info
             "no_mint": nomint,
+            "mint_address": mint_address,
+            "pair_address": pair_address,
             # **concentration,
 
-            # Security & creator info (Birdeye)
+            # Birdeye Security & creator info (Birdeye)
             "be_top_holders_percent": be_top_holders_percent,
-            "be_creator_address": be_security.get("creatorAddress"),
             "be_creation_tx": be_security.get("creationTx"),
             "be_creation_time": be_security.get("creationTime"),
             "be_mint_tx": be_security.get("mintTx"),
             "be_mint_time": be_security.get("mintTime"),
             "be_total_supply": be_total_supply,
             "be_mutable_metadata": be_security.get("mutableMetadata"),
+            "be_freezeable": be_security.get("freezeable") is not None,
             "be_freeze_authority": be_security.get("freezeAuthority") is not None,
             "be_top10_holder_percent": round(float(be_security.get("top10HolderPercent", 0)) * 100, 2),
-            "be_creator_percentage": float(be_security.get("creatorPercentage", 0)),
             "be_non_transferable": be_security.get("nonTransferable"),
             "be_fake_token": be_security.get("fakeToken"),
             "be_is_true_token": be_security.get("isTrueToken"),
             "be_pre_market_holder": be_security.get("preMarketHolder"),
             "be_transfer_fee_enable": be_security.get("transferFeeEnable"),
 
+            # Birdeye Creator info
+            "be_creator_percentage": float(be_security.get("creatorPercentage", 0)),
+            "be_creator_address": be_security.get("creatorAddress"),
+            "be_creator_net_worth_usd": float(be_wallet_overview.get("net_worth", 0)),
+            "creator_wallet_age_days": wallet_age.get("age_days"),
+
             # Birdeye Pair / Market info
             "be_liquidity_usd": be_overview.get("liquidity"),
             "be_price_usd": be_overview.get("price"),
             "be_volume_24h_usd": be_overview.get("volume_24h"),
             "be_unique_wallets_24h": be_overview.get("unique_wallet_24h"),
-
             
             # Dexscreener extras
             "dex_price_usd": dexscreener_info.get("priceUsd"),
@@ -254,7 +327,6 @@ class SolanaTokenSummary:
             "dex_socials": dexscreener_info.get("info", {}).get("socials"),
             "dex_websites": dexscreener_info.get("info", {}).get("websites")
         }
-
 
 
     def get_token_summary_df(

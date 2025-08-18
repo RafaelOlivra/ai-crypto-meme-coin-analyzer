@@ -12,6 +12,14 @@ def test_get_mint_info():
     assert "mintAuthority" in mint_info
     assert "supply" in mint_info
 
+def test_get_wallet_age():
+    solana = SolanaTokenSummary()
+    wallet_age = solana.get_wallet_age("GixMsyA2jeAoUEQkF2vZD77DdGGh7FFyW8qsezetyEs3")
+    assert isinstance(wallet_age, dict)
+    _log("Wallet age:", wallet_age)
+    assert "first_tx_time" in wallet_age
+    assert "age_days" in wallet_age
+
 def test_get_birdeye_token_security():
     solana = SolanaTokenSummary()
     security_info = solana._get_birdeye_token_security("2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv")
@@ -19,6 +27,12 @@ def test_get_birdeye_token_security():
     assert "freezeAuthority" in security_info
     assert "nonTransferable" in security_info
     assert "isTrueToken" in security_info
+
+def test_get_birdeye_wallet_overview():
+    solana = SolanaTokenSummary()
+    wallet_info = solana._get_birdeye_wallet_overview("GixMsyA2jeAoUEQkF2vZD77DdGGh7FFyW8qsezetyEs3")
+    assert isinstance(wallet_info, dict)
+    assert "net_worth" in wallet_info
 
 def test_get_dexscreener_token_pair_info():
     solana = SolanaTokenSummary()

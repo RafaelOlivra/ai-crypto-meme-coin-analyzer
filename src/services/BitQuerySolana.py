@@ -85,6 +85,10 @@ class BitQuerySolana:
             "query": query,
             "variables": variables
         }
+        
+        
+        _log("BitQuery Query:", query)
+        _log("BitQuery Variables:", variables)
 
         response_data = self._fetch(
             url=self.eap_url, 
@@ -95,7 +99,7 @@ class BitQuerySolana:
         try:
             return response_data["data"]["Solana"]["Transfers"]
         except (KeyError, TypeError) as e:
-            _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
+            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
@@ -285,6 +289,9 @@ class BitQuerySolana:
           "variables": variables
         }
         
+        _log("BitQuery Query:", query)
+        _log("BitQuery Variables:", variables)
+        
         response_data = self._fetch(
             url=self.eap_url, 
             method="post", 
@@ -294,7 +301,7 @@ class BitQuerySolana:
         try:
             return response_data["data"]["Solana"]["DEXTradeByTokens"][0]
         except (KeyError, TypeError) as e:
-            _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
+            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return None
 
     def get_gmgn_token_pair_summary_df(
@@ -340,7 +347,88 @@ class BitQuerySolana:
         # Adapt to a pandas Dataframe
         df = pd.DataFrame([flat])
         return df
-      
+    
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def get_gmgn_liquidity_pool_for_pair(
+          self,
+          pair_address: str,
+          time: Optional[str] = None
+        ):
+        """
+        Retrieve the GMGN liquidity pool information for a specific market pair.
+
+        Args:
+            pair_address (str): The mint address of the market pair to query.
+            time (Optional[str]): The specific time to base the query on (default: None).
+
+        Returns:
+            dict: The liquidity pool information for the specified market pair.
+        """
+
+        # Use current time if not provided
+        if not time:
+          time = Utils.formatted_date()
+          
+        query = """
+          query Q($time: DateTime!, $pair_address: String!) {
+            Solana {
+                DEXPools(
+                    where: {
+                        Pool: {
+                            Market: { MarketAddress: { is: $pair_address }}
+                        }
+                        Block: { Time: { before: $time } }
+                    }
+                  limit: {count: 1}
+                ) {
+                    Pool {
+                        Market {
+                            MarketAddress
+                        }
+                        Quote {
+                          Price
+                          PriceInUSD
+                          PostAmount # Liquidity Pool at the time
+                          PostAmountInUSD
+                        }
+                        Base {
+                          Price
+                        }
+                    }
+                    Block {
+                        Time
+                    }
+                }
+            }
+        }
+        """
+        
+        variables = {
+          "pair_address": pair_address,
+          "time": Utils.formatted_date(time)
+        }
+
+        payload = {
+          "query": query,
+          "variables": variables
+        }
+        
+        response_data = self._fetch(
+            url=self.eap_url, 
+            method="post", 
+            data=json.dumps(payload),
+        )
+        
+        _log("BitQuery Query:", query)
+        _log("BitQuery Variables:", variables)
+        _log("BitQuery Response:", response_data)
+
+        try:
+            # _log("BitQuery", response_data)
+            return response_data["data"]["Solana"]["DEXPools"][0]
+        except (KeyError, TypeError) as e:
+            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
+            return []
 
     def get_gmgn_recent_token_pair_trades(
           self,
@@ -361,37 +449,45 @@ class BitQuerySolana:
                   volume, liquidity, and other market indicators.
         """
         query = """
-        query Q($token: String!, $side_token: String!) {
-          Solana {
-            DEXTradeByTokens(
-              where: {Trade: {Currency: {MintAddress: {is: $token}}, Side: {Currency: {MintAddress: {is: $side_token}}}, Dex: {ProgramAddress: {}}}, Transaction: {Result: {Success: true}}}
-            ) {
-              Block {
-                Time
-              }
-              Trade {
-                Currency {
-                  Symbol
+        query Q($token: String!, $side_token: String!, $pair_address: String!) {
+            Solana {
+                DEXTradeByTokens(
+                    where: {
+                        Trade: {
+                            Market: { MarketAddress: { is: $pair_address } }
+                            Currency: { MintAddress: { is: $token } }
+                            Side: { Currency: { MintAddress: { is: $side_token } } }
+                            Dex: { ProgramAddress: {} }
+                        }
+                        Transaction: { Result: { Success: true } }
+                    }
+                ) {
+                    Block {
+                        Time
+                    }
+                    Trade {
+                        Currency {
+                            Symbol
+                        }
+                        Amount
+                        PriceAgainstSideCurrency: Price
+                        PriceInUSD
+                        Side {
+                            Currency {
+                                Symbol
+                            }
+                            Amount
+                            Type
+                        }
+                    }
+                    Transaction {
+                        Maker: Signer
+                        Fee
+                        FeeInUSD
+                        FeePayer
+                    }
                 }
-                Amount
-                PriceAgainstSideCurrency: Price
-                PriceInUSD
-                Side {
-                  Currency {
-                    Symbol
-                  }
-                  Amount
-                  Type
-                }
-              }
-              Transaction {
-                Maker: Signer
-                Fee
-                FeeInUSD
-                FeePayer
-              }
             }
-          }
         }
         """
         variables = {
@@ -415,7 +511,7 @@ class BitQuerySolana:
             # _log("BitQuery", response_data)
             return response_data["data"]["Solana"]["DEXTradeByTokens"]
         except (KeyError, TypeError) as e:
-            _log(f"Error parsing BitQuerySolana response: {e}", level="ERROR")
+            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
     def get_gmgn_recent_token_pair_trades_df(
