@@ -54,7 +54,6 @@ class BitQuerySolana:
                 AmountInUSD
                 Currency {
                   MintAddress
-                  Name
                   Symbol
                 }
                 Sender {
@@ -68,7 +67,6 @@ class BitQuerySolana:
                 Time
               }
               Transaction {
-                Signature
                 Fee
                 FeeInUSD
                 FeePayer
@@ -155,7 +153,7 @@ class BitQuerySolana:
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_gmgn_token_pair_summary(
           self,
-          token: str,
+          mint_adress: str,
           pair_address: str,
           side_token: str = "So11111111111111111111111111111111111111112",
           time: int = 0
@@ -164,7 +162,7 @@ class BitQuerySolana:
         Retrieve a trading summary for a specific GMGN token in a given market.
 
         In the context of GMGN (a Solana-based token analytics/trading platform):
-        - `token` is the **mint address** of the token you want to analyze (the "base token").
+        - `mint_adress` is the **mint address** of the token you want to analyze (the "base token").
         - `pair_address` is the **mint address of the liquidity pool or market pair**
           in which the token is traded.
         - `side_token` is the **mint address of the counter or quote token** 
@@ -172,7 +170,7 @@ class BitQuerySolana:
           By default, this is set to wrapped SOL (`So11111111111111111111111111111111111111112`).
 
         Args:
-            token (str): Mint address of the GMGN token to analyze (base token).
+            mint_address (str): Mint address of the GMGN token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
             side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
             time (int): The specific time to base the query on (default: 0 = Current time).
@@ -189,7 +187,6 @@ class BitQuerySolana:
             ) {
               Trade {
                 Currency {
-                  Name
                   MintAddress
                   Symbol
                   UpdateAuthority
@@ -214,7 +211,6 @@ class BitQuerySolana:
                 Side {
                   Currency {
                     Symbol
-                    Name
                     MintAddress
                   }
                 }
@@ -277,14 +273,12 @@ class BitQuerySolana:
         """
         
         variables = {
-          "token": token,
+          "token": mint_adress,
           "pair_address": pair_address,
           "side_token": side_token,
           "time_5min_ago": Utils.formatted_date(time, delta_seconds=-300),
           "time_1h_ago": Utils.formatted_date(time, delta_seconds=-DEFAULT_CACHE_TTL)
         }
-        
-        _log("BitQuery", variables)
 
         payload = {
           "query": query,
@@ -305,7 +299,7 @@ class BitQuerySolana:
 
     def get_gmgn_token_pair_summary_df(
           self,
-          token: str,
+          mint_adress: str,
           pair_address: str,
           side_token: str = "So11111111111111111111111111111111111111112",
           time: int = 0
@@ -314,7 +308,7 @@ class BitQuerySolana:
         Get a summary DataFrame for the GMGN token.
 
         Args:
-            token (str): Mint address of the GMGN token to analyze (base token).
+            mint_address (str): Mint address of the GMGN token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
             side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
             time (int): The specific time to base the query on (default: 0 = Current time).
@@ -322,7 +316,7 @@ class BitQuerySolana:
         Returns:
             pd.DataFrame: A DataFrame containing the token's summary statistics.
         """
-        summary = self.get_gmgn_token_pair_summary(token, pair_address, side_token, time)
+        summary = self.get_gmgn_token_pair_summary(mint_adress, pair_address, side_token, time)
         
         # Flatten the Trade section
         flat = {}
@@ -350,7 +344,7 @@ class BitQuerySolana:
 
     def get_gmgn_recent_token_pair_trades(
           self,
-          token: str,
+          mint_address: str,
           pair_address: str,
           side_token: str = "So11111111111111111111111111111111111111112"
         ):
@@ -377,7 +371,6 @@ class BitQuerySolana:
               }
               Trade {
                 Currency {
-                  Name
                   Symbol
                 }
                 Amount
@@ -385,7 +378,6 @@ class BitQuerySolana:
                 PriceInUSD
                 Side {
                   Currency {
-                    Name
                     Symbol
                   }
                   Amount
@@ -394,7 +386,6 @@ class BitQuerySolana:
               }
               Transaction {
                 Maker: Signer
-                Signature
                 Fee
                 FeeInUSD
                 FeePayer
@@ -404,7 +395,7 @@ class BitQuerySolana:
         }
         """
         variables = {
-          "token": token,
+          "token": mint_address,
           "pair_address": pair_address,
           "side_token": side_token
         }
@@ -429,7 +420,7 @@ class BitQuerySolana:
 
     def get_gmgn_recent_token_pair_trades_df(
           self,
-          token: str,
+          mint_address: str,
           pair_address: str,
           side_token: str = "So11111111111111111111111111111111111111112"
         ) -> pd.DataFrame:
@@ -437,7 +428,7 @@ class BitQuerySolana:
         Get recent trades for the GMGN token as a DataFrame.
         
         Args:
-            token (str): Mint address of the GMGN token to analyze (base token).
+            mint_address (str): Mint address of the GMGN token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
             side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
 
@@ -445,7 +436,7 @@ class BitQuerySolana:
             pd.DataFrame: A DataFrame containing the token's recent trade data.
         """
         trades = self.get_gmgn_recent_token_pair_trades(
-            token=token,
+            mint_address=mint_address,
             pair_address=pair_address,
             side_token=side_token
         )

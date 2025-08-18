@@ -16,7 +16,6 @@ def test_get_access_token():
 def test_get_mint_address_by_name():
     bitquery = BitQuerySolana()
     mint_address = bitquery.get_mint_address_by_name('Pudgy Penguins')
-    _log("Pudgy Penguins mint address fetched successfully.", mint_address)
     assert isinstance(mint_address, str)
     assert mint_address == "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
     time.sleep(1)
@@ -31,13 +30,13 @@ def test_get_recent_coin_transactions():
     
 def test_get_gmgn_token_pair_summary():
     bitquery = BitQuerySolana()
-    token = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
+    mint_address = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
     pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
     time = "2025-08-14T15:30:39Z"
-    summary = bitquery.get_gmgn_token_pair_summary(token, pair_address, time=time)
+    summary = bitquery.get_gmgn_token_pair_summary(mint_address, pair_address, time=time)
     # _log("GMGN token summary fetched successfully.", summary)
     assert isinstance(summary, dict)
-    assert summary['Trade']['Currency']['MintAddress'] == token
+    assert summary['Trade']['Currency']['MintAddress'] == mint_address
     assert summary['Trade']['Market']['MarketAddress'] == pair_address
     assert "sell_volume" in summary
     assert "sell_volume_5min" in summary
@@ -45,9 +44,9 @@ def test_get_gmgn_token_pair_summary():
     
 def test_get_gmgn_recent_token_trades():
     bitquery = BitQuerySolana()
-    token = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
+    mint_address = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
     pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
-    trades = bitquery.get_gmgn_recent_token_pair_trades(token, pair_address)
+    trades = bitquery.get_gmgn_recent_token_pair_trades(mint_address, pair_address)
     # _log("GMGN recent token trades fetched successfully.", trades)
     _log(trades[0]['Transaction']['FeeInUSD'])
     assert isinstance(trades, list)
