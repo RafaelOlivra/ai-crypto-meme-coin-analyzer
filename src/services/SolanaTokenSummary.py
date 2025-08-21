@@ -11,7 +11,7 @@ from lib.LocalCache import cache_handler
 from lib.Utils import Utils
 from services.log.Logger import _log
 
-DEFAULT_CACHE_TTL = 60
+DEFAULT_CACHE_TTL = 300
 DAYS_IN_SECONDS = 24 * 60 * 60
 
 class SolanaTokenSummary:
@@ -413,7 +413,7 @@ class SolanaTokenSummary:
             # **concentration,
 
             # Birdeye Security & creator info (Birdeye)
-            "be_top_holders_percent": be_top_holders_percent,
+            "be_top10_holders_plus_creator_percentage": be_top_holders_percent,
             "be_creation_tx": be_security.get("creationTx"),
             "be_creation_time": be_security.get("creationTime"),
             "be_mint_tx": be_security.get("mintTx"),
@@ -422,7 +422,7 @@ class SolanaTokenSummary:
             "be_mutable_metadata": be_security.get("mutableMetadata"),
             "be_freezeable": be_security.get("freezeable") is not None,
             "be_freeze_authority": be_security.get("freezeAuthority") is not None,
-            "be_top10_holder_percent": round(float(be_security.get("top10HolderPercent", 0)) * 100, 2),
+            "be_top10_holder_percentage": round(float(be_security.get("top10HolderPercent", 0)) * 100, 2),
             "be_non_transferable": be_security.get("nonTransferable"),
             "be_fake_token": be_security.get("fakeToken"),
             "be_is_true_token": be_security.get("isTrueToken"),

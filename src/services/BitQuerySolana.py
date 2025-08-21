@@ -520,9 +520,6 @@ class BitQuerySolana:
           "variables": variables
         }
         
-        _log("BitQuery Query:", query)
-        _log("BitQuery Variables:", variables)
-        
         response_data = self._fetch(
             url=self.eap_url, 
             method="post", 
@@ -578,6 +575,10 @@ class BitQuerySolana:
           
         # Adapt to a pandas Dataframe
         df = pd.DataFrame([flat])
+        
+        # Add bq_ prefix to all columns
+        df = df.rename(columns=lambda x: f"bq_{x}" if not x.startswith("bq_") else x)
+        
         return df
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
@@ -658,16 +659,18 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
+    @cache_handler.cache(ttl_s=60)
     def get_recent_pair_tx(
           self,
           mint_address: str,
-          pair_address: str
+          pair_address: str,
+          limit: int = 100
         ):
         """
-        Get recent trades for the GMGN token.
+        Get recent trades for the token.
 
         Args:
-            mint_address (str): Mint address of the GMGN token to analyze (base token).
+            mint_address (str): Mint address of the token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
 
         Returns:
@@ -675,7 +678,7 @@ class BitQuerySolana:
                   volume, liquidity, and other market indicators.
         """
         query = """
-        query Q($mintAddress: String!, $pairAddress: String!) {
+        query Q($mintAddress: String!, $pairAddress: String!, $limit: Int!) {
           Solana {
               DEXTradeByTokens(
                   where: {
@@ -685,10 +688,12 @@ class BitQuerySolana:
                           Dex: { ProgramAddress: {} }
                       }
                       Transaction: { Result: { Success: true } }
-                  }
+                  },
+                  limit: { count: $limit }
               ) {
                   Block {
                       Time
+                      Hash
                   }
                   Trade {
                       Currency {
@@ -717,7 +722,8 @@ class BitQuerySolana:
         """
         variables = {
           "mintAddress": mint_address,
-          "pairAddress": pair_address
+          "pairAddress": pair_address,
+          "limit": limit
         }
 
         payload = {
@@ -741,7 +747,8 @@ class BitQuerySolana:
     def get_recent_pair_tx_df(
           self,
           mint_address: str,
-          pair_address: str
+          pair_address: str,
+          limit: int = 100
         ) -> pd.DataFrame:
         """
         Get recent trades for the token as a DataFrame.
@@ -755,7 +762,8 @@ class BitQuerySolana:
         """
         trades = self.get_recent_pair_tx(
             mint_address=mint_address,
-            pair_address=pair_address
+            pair_address=pair_address,
+            limit=limit
         )
 
         def flatten_trade_record(record):
@@ -807,6 +815,9 @@ class BitQuerySolana:
                 df[col] = df[col].astype(float)
             except (ValueError, TypeError):
                 pass
+
+        # Add bq_ prefix to all columns
+        df = df.rename(columns=lambda x: f"bq_{x}" if not x.startswith("bq_") else x)
 
         return df
 

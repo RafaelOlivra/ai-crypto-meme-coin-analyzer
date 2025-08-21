@@ -114,15 +114,19 @@ def Home():
     st.dataframe(df_recent_transactions, use_container_width=True)
 
     st.markdown("### Processed DataFrame")
+    
     # Get transaction_maker_age_days for every transaction_maker
-    df_recent_transactions['transaction_maker_age_days'] = df_recent_transactions['transaction_maker'].apply(solana._solscan_estimate_wallet_age)
+    tm_wallets = df_recent_transactions['bq_transaction_maker'].unique().tolist()
+    tm_ages = bitquery.estimate_wallets_age(tm_wallets)
 
+    # Add the wallet age to the Dataframe
+    df_recent_transactions['bq_transaction_maker_age_days'] = df_recent_transactions['bq_transaction_maker'].map(tm_ages)
+    
     # Merge the token status df (Since it is 1 row, copy it for each transaction)
     df_status = df_status.merge(df_summary, how="cross")
     df_recent_transactions = df_status.merge(df_recent_transactions, how="cross")
 
     st.dataframe(df_recent_transactions, use_container_width=True)
-
 
     # col1, col2 = st.columns(2)
     # with col1:

@@ -51,11 +51,11 @@ def test_get_recent_token_pair_trades():
     bitquery = BitQuerySolana()
     mint_address = "J921djbXknTwmazepWsSbuwqjqqPsXA84FbGwormpump" # BILLY
     pair_address = "4hxRUetaPGfN5KuRXvpmZWdNruXiWHX3XhX3mNwbj2AA" # PUMP.FUN
-    trades = bitquery.get_recent_pair_tx(mint_address, pair_address)
+    trades = bitquery.get_recent_pair_tx(mint_address, pair_address, limit=5)
     # _log("GMGN recent token trades fetched successfully.", trades)
     _log(trades[0]['Transaction']['FeeInUSD'])
     assert isinstance(trades, list)
-    assert len(trades) > 0
+    assert len(trades) == 5
     assert float(trades[0]['Transaction']['FeeInUSD']) > 0
     
 def test_get_liquidity_pool():
@@ -81,6 +81,6 @@ def test_get_wallet_age_multiple():
         "2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T",
         "5wEyeeTwzaqdkgSw1TfeNbhWzppjWFv35aW8tk3vyS2x"
     ])
-    assert isinstance(wallet_age, list)
+    assert isinstance(wallet_age, dict)
     _log("Wallet age:", wallet_age)
-    assert all(age >= 0 for age in wallet_age)
+    assert all(age >= 0 for age in wallet_age.values())
