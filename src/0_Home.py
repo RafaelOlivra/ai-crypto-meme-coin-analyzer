@@ -68,20 +68,16 @@ def Home():
                 "mint": data["mint"],
                 "pair": data["pair"]
             }
-        app_data.set_state("latest_tokens", coins)
+        app_data.set_state("latest_tokens", coins, ttl=60)
 
     addresses = {
         "BILLY": {
             "mint": "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump",
             "pair": "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
         },
-        "YIPITI": {
-            "mint": "8UoDzy35biTQrGzHkDLzN9S4gyGb5bNLijFQywF9pump",
-            "pair": "9JzoQY96wc3uC19HFLLKmjTKQ9DfUkm9wiM5KcsxN2jb"
-        },
-        "BITCOIN": {
-            "mint": "66X4jLEvSgtpmKowfCEr8LBW7GZfdK8MPVfnyYApump",
-            "pair": "6Vz9w6jRvJ4A3AQ2aEzqfhNCV2kiBN31HYBQADRGU3hj"
+        "INN0": {
+            "mint": "E8uL1V5kxzgMSiTczapzocaneGwBreGdKL6SzW2Fpump",
+            "pair": "4CjK8NS1EAu3DpJUMBCV1CbPEGLsZMSem5R5ctZ7mSV4"
         },
         "PENGU": {
             "mint": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
@@ -114,7 +110,7 @@ def Home():
     st.dataframe(df_summary.T.rename_axis("BitQuery Summary"), use_container_width=True)
 
     st.markdown("### Recent Trades (BitQuery)")
-    df_recent_transactions = bitquery.get_recent_token_pair_trades_df(token, pair_address)
+    df_recent_transactions = bitquery.get_recent_pair_tx_df(token, pair_address)
     st.dataframe(df_recent_transactions, use_container_width=True)
     
 
@@ -125,7 +121,7 @@ def Home():
     #     maker = tx['transaction_maker']
     #     wallet_age = solana.get_wallet_age(maker)
     #     tx['transaction_maker_wallet_age_days'] = wallet_age
-    df_recent_transactions['transaction_maker_wallet_age_days'] = df_recent_transactions['transaction_maker'].apply(bitquery.get_wallet_age_days)
+    df_recent_transactions['transaction_maker_wallet_age_days'] = df_recent_transactions['transaction_maker'].apply(bitquery.get_wallet_first_known_tx)
 
     # Merge the token status df (Since it is 1 row, copy it for each transaction)
     df_status = df_status.merge(df_summary, how="cross")

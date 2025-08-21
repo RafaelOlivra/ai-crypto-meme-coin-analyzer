@@ -1,8 +1,9 @@
 import os
 import json
-from lib.LocalCache import cache_handler
-
+import time
 from typing import Any, Union
+
+from lib.LocalCache import cache_handler
 from services.log.Logger import _log
 
 DEFAULT_CACHE_TTL = 60
@@ -108,22 +109,35 @@ class AppData:
             key (str): The key for the state variable to retrieve.
 
         Returns:
-            Any: The value of the state variable, or None if the key or file does not exist.
+            Any: The value of the state variable, or None if the key doesn't exist or is expired.
         """
         state_file = self._get_storage_map()["session_state"]
         if os.path.exists(state_file):
             with open(state_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get(key)
+                entry = data.get(key)
+                if entry is None:
+                    return None
+
+                # Handle TTL expiration
+                expires_at = entry.get("expires_at")
+                if expires_at is not None and time.time() > expires_at:
+                    # Expired -> remove and resave file
+                    data.pop(key, None)
+                    self._save_file(state_file, data)
+                    return None
+
+                return entry.get("value")
         return None
 
-    def set_state(self, key: str, value: Any) -> bool:
+    def set_state(self, key: str, value: Any, ttl: int = None) -> bool:
         """
-        Save a key-value pair to the session state JSON file.
+        Save a key-value pair to the session state JSON file with optional TTL.
 
         Args:
             key (str): The key for the state variable.
             value (Any): The value to save.
+            ttl (int, optional): Time-to-live in seconds. If None, data never expires.
 
         Returns:
             bool: True if saved successfully, False otherwise.
@@ -133,11 +147,12 @@ class AppData:
         if os.path.exists(state_file):
             with open(state_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        
-        data[key] = value
-        
-        return self._save_file(state_file, data)
 
+        expires_at = time.time() + ttl if ttl is not None else None
+        data[key] = {"value": value, "expires_at": expires_at}
+
+        return self._save_file(state_file, data)
+    
     # --------------------------
     # File Operations
     # --------------------------

@@ -5,6 +5,8 @@ import time
 
 from services.SolanaTokenSummary import SolanaTokenSummary
 
+## Solana RPC
+
 def test_get_mint_info():
     solana = SolanaTokenSummary()
     mint_info = solana._get_mint_info("2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv")
@@ -21,6 +23,8 @@ def test_get_wallet_age():
     assert "age_days" in wallet_age
     assert wallet_age["age_days"] > 18
 
+## Birdeye
+
 def test_get_birdeye_token_security():
     solana = SolanaTokenSummary()
     security_info = solana._get_birdeye_token_security("2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv")
@@ -36,6 +40,8 @@ def test_get_birdeye_wallet_overview():
     assert isinstance(wallet_info, dict)
     assert "net_worth" in wallet_info
 
+## Dexscreener
+
 def test_get_dexscreener_token_pair_info():
     solana = SolanaTokenSummary()
     dex_info = solana._get_dexscreener_token_pair_info(
@@ -47,6 +53,8 @@ def test_get_dexscreener_token_pair_info():
     assert "priceNative" in dex_info
     assert "priceUsd" in dex_info
     assert "volume" in dex_info
+
+## Aggregator
 
 def test_get_token_summary():
     solana = SolanaTokenSummary()

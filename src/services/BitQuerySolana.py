@@ -68,9 +68,7 @@ class BitQuerySolana:
               orderBy: { descending: Block_Time }
               where: {
                 Pool: {
-                  Dex: {
-                    ProgramAddress: { is: $platformAddress }
-                  }
+                  Dex: { ProgramAddress: { is: $platformAddress } },
                   Quote: {
                     PostAmountInUSD: { 
                       ge: $minLiquidity, 
@@ -141,12 +139,17 @@ class BitQuerySolana:
             return []
 
     @cache_handler.cache(ttl_s=1)
-    def get_recent_coin_trades(self, mint_address: str, limit: int = 10) -> List[Dict]:
+    def get_recent_coin_tx_for_all_pools(
+        self,
+        mint_address: str,
+        limit: int = 10
+      ) -> List[Dict]:
         """
         Get the most recent transactions for a Solana coin.
 
         Args:
             mint_address (str): The mint address of the coin (contract_address).
+            pair_address (str): Mint address of the specific market pair/liquidity pool.
             limit (int): The number of recent transactions to retrieve.
 
         Returns:
@@ -156,25 +159,32 @@ class BitQuerySolana:
         query = """
         query ($mintAddress: String!, $limit: Int!) {
           Solana(network: solana) {
-            Transfers(
+            DEXTradeByTokens(
               where: {
-                Transfer: { Currency: { MintAddress: { is: $mintAddress}}},
-                Transaction: { Result: { Success: true }}
+                Trade: { 
+                  Currency: { MintAddress: {is: $mintAddress} }
+                },
+                Transaction: {Result: {Success: true}}
               },
-              limit: {count: $limit}
+              limit: {count: $limit},
+              orderBy: { descending: Block_Time }
             ) {
-              Transfer {
+              Trade {
                 Amount
                 AmountInUSD
+                PriceInUSD
                 Currency {
-                  MintAddress
                   Symbol
                 }
-                Sender {
-                  Address
+                Side {
+                  Amount
+                  Currency {
+                    Symbol
+                  }
+                  Type
                 }
-                Receiver {
-                  Address
+                Market {
+                  MarketAddress
                 }
               }
               Block {
@@ -207,7 +217,7 @@ class BitQuerySolana:
         )
         
         try:
-            return response_data["data"]["Solana"]["Transfers"]
+            return response_data["data"]["Solana"]["DEXTradeByTokens"]
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
@@ -265,21 +275,21 @@ class BitQuerySolana:
             return None
 
     @cache_handler.cache(ttl_s=60 * 60 * 24)
-    def get_wallet_age_days(self, wallet_address: str) -> Optional[dict]:
+    def get_wallet_first_known_tx(self, wallet_address: str) -> Optional[dict]:
         """
         Get the wallet age (based on the first transaction) for a Solana wallet.
         Returns a dict with block time, date, number, and signature if available.
         """
 
         query = """
-        query GetWalletAge($wallet_address: String!) {
+        query EstimateWalletAge($walletAddress: String!) {
           Solana {
             Transactions(
               limit: { count: 1 }
               orderBy: { ascending: Block_Time }
               where: {
                 Transaction: {
-                  Signer: { is: $wallet_address }
+                  Signer: { is: $walletAddress }
                 }
               }
             ) {
@@ -297,13 +307,13 @@ class BitQuerySolana:
         """
 
         variables = {
-            "wallet_address": wallet_address,
+            "walletAddress": wallet_address,
         }
 
         payload = {
             "query": query,
             "variables": variables,
-        }
+        } 
 
         response_data = self._fetch(
             url=self.eap_url,
@@ -314,7 +324,10 @@ class BitQuerySolana:
         try:
             tx = response_data["data"]["Solana"]["Transactions"][0]
             block_date = tx["Block"]["Date"]
-            return Utils.get_days_since(block_date)
+            age = Utils.get_days_since(block_date)
+            
+            _log(f"Wallet {wallet_address} age: {age} days (first tx on {block_date})")
+            return age
         except (KeyError, TypeError, IndexError) as e:
             _log(f"Error parsing BitQuery response or wallet not found: {e}", level="ERROR")
             return None
@@ -322,26 +335,21 @@ class BitQuerySolana:
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_token_pair_summary(
           self,
-          mint_adress: str,
+          mint_address: str,
           pair_address: str,
-          side_token: str = "So11111111111111111111111111111111111111112",
           time: int = 0
         ) -> Optional[Dict]:
         """
         Retrieve a trading summary for a specific GMGN token in a given market.
 
         In the context of GMGN (a Solana-based token analytics/trading platform):
-        - `mint_adress` is the **mint address** of the token you want to analyze (the "base token").
+        - `mint_address` is the **mint address** of the token you want to analyze (the "base token").
         - `pair_address` is the **mint address of the liquidity pool or market pair**
           in which the token is traded.
-        - `side_token` is the **mint address of the counter or quote token** 
-          that the base token is traded against (e.g., USDC, SOL). 
-          By default, this is set to wrapped SOL (`So11111111111111111111111111111111111111112`).
 
         Args:
             mint_address (str): Mint address of the GMGN token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
-            side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
             time (int): The specific time to base the query on (default: 0 = Current time).
 
         Returns:
@@ -349,10 +357,19 @@ class BitQuerySolana:
                   volume, liquidity, and other market indicators.
         """
         query = """
-          query Q($token: String!, $side_token: String!, $pair_address: String!, $time_5min_ago: DateTime!, $time_1h_ago: DateTime!) {
+        query Q($mintAddress: String!, $pairAddress: String!, $time5minAgo: DateTime!, $time1hAgo: DateTime!) {
           Solana(dataset: realtime) {
             DEXTradeByTokens(
-              where: { Transaction: { Result: { Success: true } }, Trade: { Currency: { MintAddress: { is: $token }}, Side: {Currency: {MintAddress: {is: $side_token}}}, Market: {MarketAddress: {is: $pair_address}}}, Block: {Time: {since: $time_1h_ago}}}
+              where: {
+                Transaction: {
+                  Result: { Success: true }
+                },
+                Trade: {
+                  Currency: { MintAddress: { is: $mintAddress } },
+                  Market: { MarketAddress: { is: $pairAddress } }
+                },
+                Block: { Time: { since: $time1hAgo } }
+              }
             ) {
               Trade {
                 Currency {
@@ -366,7 +383,7 @@ class BitQuerySolana:
                 start: PriceInUSD(minimum: Block_Time)
                 min5: PriceInUSD(
                   minimum: Block_Time
-                  if: {Block: {Time: {after: $time_5min_ago}}}
+                  if: {Block: {Time: {after: $time5minAgo}}}
                 )
                 end: PriceInUSD(maximum: Block_Time)
                 Dex {
@@ -387,7 +404,7 @@ class BitQuerySolana:
               makers: count(distinct: Transaction_Signer)
               makers_5min: count(
                 distinct: Transaction_Signer
-                if: {Block: {Time: {after: $time_5min_ago}}}
+                if: {Block: {Time: {after: $time5minAgo}}}
               )
               buyers: count(
                 distinct: Transaction_Signer
@@ -395,7 +412,7 @@ class BitQuerySolana:
               )
               buyers_5min: count(
                 distinct: Transaction_Signer
-                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time_5min_ago}}}
+                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time5minAgo}}}
               )
               sellers: count(
                 distinct: Transaction_Signer
@@ -403,14 +420,14 @@ class BitQuerySolana:
               )
               sellers_5min: count(
                 distinct: Transaction_Signer
-                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time_5min_ago}}}
+                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time5minAgo}}}
               )
               trades: count
-              trades_5min: count(if: {Block: {Time: {after: $time_5min_ago}}})
+              trades_5min: count(if: {Block: {Time: {after: $time5minAgo}}})
               traded_volume: sum(of: Trade_Side_AmountInUSD)
               traded_volume_5min: sum(
                 of: Trade_Side_AmountInUSD
-                if: {Block: {Time: {after: $time_5min_ago}}}
+                if: {Block: {Time: {after: $time5minAgo}}}
               )
               buy_volume: sum(
                 of: Trade_Side_AmountInUSD
@@ -418,7 +435,7 @@ class BitQuerySolana:
               )
               buy_volume_5min: sum(
                 of: Trade_Side_AmountInUSD
-                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time_5min_ago}}}
+                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time5minAgo}}}
               )
               sell_volume: sum(
                 of: Trade_Side_AmountInUSD
@@ -426,15 +443,15 @@ class BitQuerySolana:
               )
               sell_volume_5min: sum(
                 of: Trade_Side_AmountInUSD
-                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time_5min_ago}}}
+                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time5minAgo}}}
               )
               buys: count(if: {Trade: {Side: {Type: {is: buy}}}})
               buys_5min: count(
-                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time_5min_ago}}}
+                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time5minAgo}}}
               )
               sells: count(if: {Trade: {Side: {Type: {is: sell}}}})
               sells_5min: count(
-                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time_5min_ago}}}
+                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time5minAgo}}}
               )
             }
           }
@@ -442,11 +459,10 @@ class BitQuerySolana:
         """
         
         variables = {
-          "token": mint_adress,
-          "pair_address": pair_address,
-          "side_token": side_token,
-          "time_5min_ago": Utils.formatted_date(time, delta_seconds=-300),
-          "time_1h_ago": Utils.formatted_date(time, delta_seconds=-DEFAULT_CACHE_TTL)
+          "mintAddress": mint_address,
+          "pairAddress": pair_address,
+          "time5minAgo": Utils.formatted_date(time, delta_seconds=-300),
+          "time1hAgo": Utils.formatted_date(time, delta_seconds=-DEFAULT_CACHE_TTL)
         }
 
         payload = {
@@ -472,9 +488,8 @@ class BitQuerySolana:
 
     def get_token_pair_summary_df(
           self,
-          mint_adress: str,
+          mint_address: str,
           pair_address: str,
-          side_token: str = "So11111111111111111111111111111111111111112",
           time: int = 0
         ) -> pd.DataFrame:
         """
@@ -483,13 +498,12 @@ class BitQuerySolana:
         Args:
             mint_address (str): Mint address of the GMGN token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
-            side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
             time (int): The specific time to base the query on (default: 0 = Current time).
 
         Returns:
             pd.DataFrame: A DataFrame containing the token's summary statistics.
         """
-        summary = self.get_token_pair_summary(mint_adress, pair_address, side_token, time)
+        summary = self.get_token_pair_summary(mint_address, pair_address, time)
         if not summary:
             return pd.DataFrame()
 
@@ -538,12 +552,12 @@ class BitQuerySolana:
           time = Utils.formatted_date()
           
         query = """
-          query Q($time: DateTime!, $pair_address: String!) {
+          query Q($time: DateTime!, $pairAddress: String!) {
             Solana {
                 DEXPools(
                     where: {
                         Pool: {
-                            Market: { MarketAddress: { is: $pair_address }}
+                            Market: { MarketAddress: { is: $pairAddress }}
                         }
                         Block: { Time: { before: $time } }
                     }
@@ -572,7 +586,7 @@ class BitQuerySolana:
         """
         
         variables = {
-          "pair_address": pair_address,
+          "pairAddress": pair_address,
           "time": Utils.formatted_date(time)
         }
 
@@ -587,10 +601,6 @@ class BitQuerySolana:
             data=json.dumps(payload),
         )
         
-        _log("BitQuery Query:", query)
-        _log("BitQuery Variables:", variables)
-        _log("BitQuery Response:", response_data)
-
         try:
             # _log("BitQuery", response_data)
             return response_data["data"]["Solana"]["DEXPools"][0]
@@ -598,70 +608,66 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
-    def get_recent_token_pair_trades(
+    def get_recent_pair_tx(
           self,
           mint_address: str,
-          pair_address: str,
-          side_token: str = "So11111111111111111111111111111111111111112"
+          pair_address: str
         ):
         """
         Get recent trades for the GMGN token.
 
         Args:
-            token (str): Mint address of the GMGN token to analyze (base token).
+            mint_address (str): Mint address of the GMGN token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
-            side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
 
         Returns:
             dict: A dictionary containing the token's summary statistics, such as price,
                   volume, liquidity, and other market indicators.
         """
         query = """
-        query Q($token: String!, $side_token: String!, $pair_address: String!) {
-            Solana {
-                DEXTradeByTokens(
-                    where: {
-                        Trade: {
-                            Market: { MarketAddress: { is: $pair_address } }
-                            Currency: { MintAddress: { is: $token } }
-                            Side: { Currency: { MintAddress: { is: $side_token } } }
-                            Dex: { ProgramAddress: {} }
-                        }
-                        Transaction: { Result: { Success: true } }
-                    }
-                ) {
-                    Block {
-                        Time
-                    }
-                    Trade {
-                        Currency {
-                            Symbol
-                        }
-                        Amount
-                        PriceAgainstSideCurrency: Price
-                        PriceInUSD
-                        Side {
-                            Currency {
-                                Symbol
-                            }
-                            Amount
-                            Type
-                        }
-                    }
-                    Transaction {
-                        Maker: Signer
-                        Fee
-                        FeeInUSD
-                        FeePayer
-                    }
-                }
-            }
+        query Q($mintAddress: String!, $pairAddress: String!) {
+          Solana {
+              DEXTradeByTokens(
+                  where: {
+                      Trade: {
+                          Market: { MarketAddress: { is: $pairAddress } }
+                          Currency: { MintAddress: { is: $mintAddress } }
+                          Dex: { ProgramAddress: {} }
+                      }
+                      Transaction: { Result: { Success: true } }
+                  }
+              ) {
+                  Block {
+                      Time
+                  }
+                  Trade {
+                      Currency {
+                          Symbol
+                      }
+                      Amount
+                      PriceAgainstSideCurrency: Price
+                      PriceInUSD
+                      Side {
+                          Currency {
+                              Symbol
+                          }
+                          Amount
+                          Type
+                      }
+                  }
+                  Transaction {
+                      Maker: Signer
+                      Fee
+                      FeeInUSD
+                      FeePayer
+                  }
+              }
+          }
         }
         """
         variables = {
-          "token": mint_address,
-          "pair_address": pair_address,
-          "side_token": side_token
+          "mintAddress": mint_address,
+          "pairAddress": pair_address
         }
 
         payload = {
@@ -682,11 +688,10 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
-    def get_recent_token_pair_trades_df(
+    def get_recent_pair_tx_df(
           self,
           mint_address: str,
-          pair_address: str,
-          side_token: str = "So11111111111111111111111111111111111111112"
+          pair_address: str
         ) -> pd.DataFrame:
         """
         Get recent trades for the GMGN token as a DataFrame.
@@ -694,15 +699,13 @@ class BitQuerySolana:
         Args:
             mint_address (str): Mint address of the GMGN token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
-            side_token (str): Mint address of the quote/counter token (default: wrapped SOL).
 
         Returns:
             pd.DataFrame: A DataFrame containing the token's recent trade data.
         """
-        trades = self.get_recent_token_pair_trades(
+        trades = self.get_recent_pair_tx(
             mint_address=mint_address,
-            pair_address=pair_address,
-            side_token=side_token
+            pair_address=pair_address
         )
 
         def flatten_trade_record(record):

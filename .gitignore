@@ -18,6 +18,7 @@ Caddyfile
 *.dat
 *.jar
 /offload
+.conflict
 
 # Compiled Python bytecode
 *.py[cod]
