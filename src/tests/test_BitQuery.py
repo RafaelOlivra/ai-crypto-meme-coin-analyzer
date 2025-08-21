@@ -37,8 +37,8 @@ def test_get_recent_coin_trades_for_all_pools():
     
 def test_get_token_pair_summary():
     bitquery = BitQuerySolana()
-    mint_address = "4vyub89q12YPokvEidWf2UTwGnLQP681nwPa464Rpump" # $VLADY
-    pair_address = "D12rucByaUJQF2PJiW7BCHrf9suhvQvCcaQTZsetjMvR" # GMGN
+    mint_address = "J921djbXknTwmazepWsSbuwqjqqPsXA84FbGwormpump" # BILLY
+    pair_address = "4hxRUetaPGfN5KuRXvpmZWdNruXiWHX3XhX3mNwbj2AA" # PUMP.FUN
     time = "2025-08-14T15:30:39Z"
     summary = bitquery.get_token_pair_summary(mint_address, pair_address, time=time)
     assert isinstance(summary, dict)
@@ -70,7 +70,17 @@ def test_get_liquidity_pool():
     
 def test_get_wallet_age():
     solana = BitQuerySolana()
-    wallet_age = solana.get_wallet_first_known_tx("2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T")
+    wallet_age = solana.estimate_wallet_age("2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T")
     assert isinstance(wallet_age, int)
     _log("Wallet age:", wallet_age)
     assert wallet_age >= 0
+    
+def test_get_wallet_age_multiple():
+    solana = BitQuerySolana()
+    wallet_age = solana.estimate_wallets_age([
+        "2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T",
+        "5wEyeeTwzaqdkgSw1TfeNbhWzppjWFv35aW8tk3vyS2x"
+    ])
+    assert isinstance(wallet_age, list)
+    _log("Wallet age:", wallet_age)
+    assert all(age >= 0 for age in wallet_age)

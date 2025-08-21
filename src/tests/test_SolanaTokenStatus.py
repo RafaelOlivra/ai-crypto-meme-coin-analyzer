@@ -9,14 +9,14 @@ from services.SolanaTokenSummary import SolanaTokenSummary
 
 def test_get_mint_info():
     solana = SolanaTokenSummary()
-    mint_info = solana._get_mint_info("2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv")
+    mint_info = solana._rpc_get_mint_info("2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv")
     assert isinstance(mint_info, dict)
     assert "mintAuthority" in mint_info
     assert "supply" in mint_info
 
 def test_get_wallet_age():
     solana = SolanaTokenSummary()
-    wallet_age = solana.get_wallet_age("2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T")
+    wallet_age = solana._rpc_estimate_wallet_age("2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T")
     assert isinstance(wallet_age, dict)
     _log("Wallet age:", wallet_age)
     assert "first_tx_time" in wallet_age
@@ -27,7 +27,7 @@ def test_get_wallet_age():
 
 def test_get_birdeye_token_security():
     solana = SolanaTokenSummary()
-    security_info = solana._get_birdeye_token_security("2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv")
+    security_info = solana._birdeye_get_token_security("2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv")
     assert isinstance(security_info, dict)
     assert "freezeAuthority" in security_info
     assert "nonTransferable" in security_info
@@ -35,16 +35,25 @@ def test_get_birdeye_token_security():
 
 def test_get_birdeye_wallet_overview():
     solana = SolanaTokenSummary()
-    wallet_info = solana._get_birdeye_wallet_overview("GixMsyA2jeAoUEQkF2vZD77DdGGh7FFyW8qsezetyEs3")
+    wallet_info = solana._birdeye_get_wallet_overview("GixMsyA2jeAoUEQkF2vZD77DdGGh7FFyW8qsezetyEs3")
     _log("Wallet overview:", wallet_info)
     assert isinstance(wallet_info, dict)
     assert "net_worth" in wallet_info
+    
+## Solscan
+
+def test_estimate_solscan_wallet_age():
+    solana = SolanaTokenSummary()
+    wallet_age = solana._solscan_estimate_wallet_age("7LzGC6FTqgsdkK8CHtokoECWLzzp9VnJiHqfcuHYiMxf")
+    _log("Wallet Age Solscan:", wallet_age)
+    assert isinstance(wallet_age, int)
+    assert wallet_age > 18
 
 ## Dexscreener
 
 def test_get_dexscreener_token_pair_info():
     solana = SolanaTokenSummary()
-    dex_info = solana._get_dexscreener_token_pair_info(
+    dex_info = solana._dexscreener_get_token_pair_info(
         "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump", # BILLY
         "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ" # GMGN Pool
     )

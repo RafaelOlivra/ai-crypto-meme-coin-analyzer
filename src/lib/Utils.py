@@ -89,7 +89,7 @@ class Utils:
         return requests.utils.quote(text)
 
     @staticmethod
-    def formatted_date(_date: date | datetime | str | int | None = None, format="", delta_seconds: int = 0) -> str:
+    def formatted_date(_date: date | datetime | str | int | None = None, format: str = "", delta_seconds: int = 0) -> str:
         """
         Get the current date in a specific format.
 
@@ -99,7 +99,7 @@ class Utils:
         if not _date:
             _date = datetime.now()
             
-        _date = Utils.to_datetime(_date)
+        _date = Utils.to_datetime(_date, format=format)
 
         if delta_seconds:
             _date += timedelta(seconds=delta_seconds)
@@ -114,7 +114,6 @@ class Utils:
         Args:
             _date (date | datetime | str): The date object to convert.
             format (str, optional): The format to convert to. Defaults to "".
-                (Currently supports 'display' and 'iso_date_only')
         Returns:
             str: The date string in the specified format.
         """ 
@@ -130,8 +129,9 @@ class Utils:
             return _date.strftime(DATETIME_DISPLAY_FORMAT)
         elif format == "iso_date_only":
             return _date.strftime("%Y-%m-%d")
-        else:
-            # Return ISO format with full time precision (seconds, microseconds)
+        elif format != "":
+            return _date.strftime(format)
+        else: # iso
             return _date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     @staticmethod
@@ -142,7 +142,6 @@ class Utils:
         Args:
             items (list | dict): The list or dictionary to convert.
             format (str, optional): The format to convert to. Defaults to "".
-                (Currently supports 'display' and 'iso_date_only')
 
         Returns:
             (list | dict): The list or dictionary with date or datetime objects converted to strings.
@@ -184,7 +183,7 @@ class Utils:
         return str(_time.strftime(TIME_DISPLAY_FORMAT))
 
     @staticmethod
-    def to_datetime(_date: str | date | datetime | int) -> datetime:
+    def to_datetime(_date: str | date | datetime | int, format: str = "") -> datetime:
         """
         Convert a date string to a datetime object.
         By default, the date is assumed to be in iso format.
@@ -207,7 +206,11 @@ class Utils:
         # Attempt to convert from isoformat
         try:
             if isinstance(_date, str):
-                _date = datetime.fromisoformat(_date)
+                if format == "":
+                    _date = datetime.fromisoformat(_date)
+                else:
+                    _date = datetime.strptime(_date, format)
+
             elif isinstance(_date, date):
                 _date = datetime.combine(_date, datetime.min.time())
 
@@ -220,17 +223,18 @@ class Utils:
         return _date
     
     @staticmethod
-    def get_days_since(_date: str | date | datetime | int) -> int:
+    def get_days_since(_date: str | date | datetime | int, format: str = "") -> int:
         """
         Get the number of days since a given date.
 
         Args:
             _date (str | date): The date string to compare.
+            format (str, optional): The format to use for parsing the date. Defaults to "".
 
         Returns:
             int: The number of days since the given date.
         """
-        date = Utils.to_datetime(_date)
+        date = Utils.to_datetime(_date, format=format)
         if not date:
             return 0
         return (datetime.now() - date).days

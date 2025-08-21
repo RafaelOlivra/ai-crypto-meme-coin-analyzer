@@ -21,7 +21,7 @@ class BitQuerySolana:
         self.client_id = api_key or AppData().get_api_key("bitquery_client_id")
         self.client_secret = api_key or AppData().get_api_key("bitquery_client_secret")
 
-        self.base_url = "https://graphql.bitquery.io/"
+        self.apiv1 = "https://graphql.bitquery.io/"
         self.oauth_url = "https://oauth2.bitquery.io/oauth2/token"
         self.eap_url = "https://streaming.bitquery.io/eap"
         self.session = requests.Session()
@@ -275,62 +275,112 @@ class BitQuerySolana:
             return None
 
     @cache_handler.cache(ttl_s=60 * 60 * 24)
-    def get_wallet_first_known_tx(self, wallet_address: str) -> Optional[dict]:
+    def estimate_wallet_age(self, wallet_address: str) -> Optional[int]:
         """
         Get the wallet age (based on the first transaction) for a Solana wallet.
-        Returns a dict with block time, date, number, and signature if available.
+
+        Args:
+            wallet_address (str): The Solana wallet address to check.
+
+        Returns:
+            Optional[int]: The age of the wallet in days, or None if not found.
         """
 
         query = """
-        query EstimateWalletAge($walletAddress: String!) {
-          Solana {
-            Transactions(
-              limit: { count: 1 }
-              orderBy: { ascending: Block_Time }
-              where: {
-                Transaction: {
-                  Signer: { is: $walletAddress }
-                }
-              }
-            ) {
-              Block {
-                Time
-                Date
-              }
-              Transaction {
-                Signature
-                Signer
-              }
+        {
+          solana {
+            transfers(receiverAddress: {is: "$walletAddress"}) {
+              minimum(of: time)
             }
           }
         }
         """
-
-        variables = {
-            "walletAddress": wallet_address,
-        }
+        
+        query = query.replace("$walletAddress", wallet_address)
 
         payload = {
             "query": query,
-            "variables": variables,
         } 
 
         response_data = self._fetch(
-            url=self.eap_url,
+            url=self.apiv1,
             method="post",
             data=json.dumps(payload),
         )
 
         try:
-            tx = response_data["data"]["Solana"]["Transactions"][0]
-            block_date = tx["Block"]["Date"]
-            age = Utils.get_days_since(block_date)
-            
+            tx = response_data["data"]["solana"]["transfers"][0]
+            block_date = tx["minimum"]
+            age = Utils.get_days_since(block_date, format="%Y-%m-%d %H:%M:%S %Z")
             _log(f"Wallet {wallet_address} age: {age} days (first tx on {block_date})")
             return age
+          
         except (KeyError, TypeError, IndexError) as e:
             _log(f"Error parsing BitQuery response or wallet not found: {e}", level="ERROR")
             return None
+          
+    @cache_handler.cache(ttl_s=60 * 60 * 24)
+    def estimate_wallets_age(self, wallet_addresses: list[str]) -> dict[str, Optional[int]]:
+        """
+        Get the wallet age (based on the first transaction) for multiple Solana wallets.
+
+        Args:
+            wallet_addresses (list[str]): List of Solana wallet addresses.
+
+        Returns:
+            dict[str, Optional[int]]: Mapping of wallet address -> wallet age in days (or None if not found).
+        """
+
+        # Format addresses for GraphQL
+        addresses_str = ", ".join([f'"{addr}"' for addr in wallet_addresses])
+
+        query = """
+        {
+          solana {
+            transfers(
+              receiverAddress: {in: [$addresses]}
+            ) {
+              minimum(of: time)
+              receiver {
+                address
+              }
+            }
+          }
+        }
+        """
+        query = query.replace("$addresses", addresses_str)
+
+        payload = {
+            "query": query,
+        }
+
+        response_data = self._fetch(
+            url=self.apiv1,
+            method="post",
+            data=json.dumps(payload),
+        )
+
+        results: dict[str, Optional[int]] = {}
+
+        try:
+            transfers = response_data["data"]["solana"]["transfers"]
+            for tx in transfers:
+                block_date = tx["minimum"]
+                wallet_address = tx["receiver"]["address"]
+
+                if block_date:
+                    age = Utils.get_days_since(block_date, format="%Y-%m-%d %H:%M:%S %Z")
+                    results[wallet_address] = age
+                    _log(f"Wallet {wallet_address} age: {age} days (first tx on {block_date})")
+                else:
+                    results[wallet_address] = None
+
+        except (KeyError, TypeError) as e:
+            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
+            # fallback: mark all wallets as None
+            results = {addr: None for addr in wallet_addresses}
+
+        return results
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_token_pair_summary(
@@ -462,7 +512,7 @@ class BitQuerySolana:
           "mintAddress": mint_address,
           "pairAddress": pair_address,
           "time5minAgo": Utils.formatted_date(time, delta_seconds=-300),
-          "time1hAgo": Utils.formatted_date(time, delta_seconds=-DEFAULT_CACHE_TTL)
+          "time1hAgo": Utils.formatted_date(time, delta_seconds=-3600)
         }
 
         payload = {
@@ -694,10 +744,10 @@ class BitQuerySolana:
           pair_address: str
         ) -> pd.DataFrame:
         """
-        Get recent trades for the GMGN token as a DataFrame.
+        Get recent trades for the token as a DataFrame.
         
         Args:
-            mint_address (str): Mint address of the GMGN token to analyze (base token).
+            mint_address (str): Mint address of the token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
 
         Returns:
@@ -803,7 +853,7 @@ class BitQuerySolana:
             return {"error": "Query is already in progress"}
 
         if not url.startswith("http"):
-            url = self.base_url + url
+            url = self.apiv1 + url
 
         if headers is None:
             headers = {}

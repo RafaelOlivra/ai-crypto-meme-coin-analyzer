@@ -8,9 +8,11 @@ from typing import Optional, Dict, Any, List
 
 from services.AppData import AppData
 from lib.LocalCache import cache_handler
+from lib.Utils import Utils
 from services.log.Logger import _log
 
 DEFAULT_CACHE_TTL = 60
+DAYS_IN_SECONDS = 24 * 60 * 60
 
 class SolanaTokenSummary:
     """
@@ -22,35 +24,35 @@ class SolanaTokenSummary:
         self.session = requests.Session()
         self.birdeye_api_key = AppData().get_api_key("birdeye_api_key")
         self.helius_api_key = AppData().get_api_key("helius_api_key")
-        self.moralis_api_key = AppData().get_api_key("moralis_api_key")
+        self.solscan_api_key = AppData().get_api_key("solscan_api_key")
 
     # --------------------------
     # Solana RPC info
     # --------------------------
 
-    def _get_mint_info(self, mint_address: str) -> Optional[dict]:
-        data = self._fetch_solana_rpc("getAccountInfo", [mint_address, {"encoding": "jsonParsed"}])
+    def _rpc_get_mint_info(self, mint_address: str) -> Optional[dict]:
+        data = self._rpc_fetch("getAccountInfo", [mint_address, {"encoding": "jsonParsed"}])
         try:
             return data["result"]["value"]["data"]["parsed"]["info"]
         except (KeyError, TypeError):
             return None
 
-    def _get_token_supply(self, mint_address: str) -> Decimal:
-        data = self._fetch_solana_rpc("getTokenSupply", [mint_address])
+    def _rpc_get_token_supply(self, mint_address: str) -> Decimal:
+        data = self._rpc_fetch("getTokenSupply", [mint_address])
         try:
             return Decimal(data["result"]["value"]["uiAmount"])
         except (KeyError, TypeError):
             return Decimal(0)
 
-    def _get_largest_accounts(self, mint_address: str) -> List[dict]:
-        data = self._fetch_solana_rpc("getTokenLargestAccounts", [mint_address])
+    def _rpc_get_largest_accounts(self, mint_address: str) -> List[dict]:
+        data = self._rpc_fetch("getTokenLargestAccounts", [mint_address])
         try:
             return data["result"]["value"]
         except (KeyError, TypeError):
             return []
-    
-    @cache_handler.cache(ttl_s=60 * 60 * 24)
-    def get_wallet_age(self, wallet_address: str) -> Dict[str, Any]:
+
+    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
+    def _rpc_estimate_wallet_age(self, wallet_address: str) -> Dict[str, Any]:
         """
         Get the wallet age (days since first transaction).
         Returns a dict with first_tx_time (datetime) and age_days (int).
@@ -60,7 +62,7 @@ class SolanaTokenSummary:
 
         # Page through until we hit the oldest tx
         while True:
-            data = self._fetch_solana_rpc(
+            data = self._rpc_fetch(
                 "getSignaturesForAddress",
                 [wallet_address, {"limit": 1000, "before": before}]
             )
@@ -79,7 +81,7 @@ class SolanaTokenSummary:
             return {"error": "No transactions found for this wallet: " + wallet_address}
 
         # Fetch transaction details to get blockTime
-        tx_data = self._fetch_solana_rpc("getTransaction", [oldest_sig, {"encoding": "json"}])
+        tx_data = self._rpc_fetch("getTransaction", [oldest_sig, {"encoding": "json"}])
         tx = tx_data.get("result", {})
         block_time = tx.get("blockTime")
 
@@ -95,11 +97,11 @@ class SolanaTokenSummary:
             "age_days": age_days
         }
 
-    def _check_nomint(self, mint_info: dict) -> bool:
+    def _rpc_check_nomint(self, mint_info: dict) -> bool:
         return mint_info.get("mintAuthority") is None
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def _fetch_solana_rpc(self, method: str, params: list) -> dict:
+    def _rpc_fetch(self, method: str, params: list) -> dict:
         """
         Fetches data from the Solana RPC endpoint with retry logic.
         """
@@ -121,19 +123,19 @@ class SolanaTokenSummary:
                     _log("Retrying in 3 seconds...", level="INFO")
                     time.sleep(3) # Delay for 3 seconds before retrying
 
-        _log(f"All {max_retries} attempts failed for method {method}.", level="CRITICAL")
+        _log(f"All {max_retries} attempts failed for method {method}.", level="ERROR")
         return {}
 
     # --------------------------
     # Dexscreener Info
     # --------------------------
 
-    def _get_dexscreener_token_info(self, mint_address: str) -> Optional[dict]:
-        data = self._fetch_dexscreener_api(mint_address)
+    def _dexscreener_get_token_info(self, mint_address: str) -> Optional[dict]:
+        data = self._dexscreener_fetch(mint_address)
         return data.get("pairs", [])
 
-    def _get_dexscreener_token_pair_info(self, mint_address: str, pair_address: str) -> Optional[dict]:
-        pairs = self._get_dexscreener_token_info(mint_address)
+    def _dexscreener_get_token_pair_info(self, mint_address: str, pair_address: str) -> Optional[dict]:
+        pairs = self._dexscreener_get_token_info(mint_address)
         if not pairs:
             return None
         for pair in pairs:
@@ -142,7 +144,7 @@ class SolanaTokenSummary:
         return None
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def _fetch_dexscreener_api(self, mint_address: str) -> dict:
+    def _dexscreener_fetch(self, mint_address: str) -> dict:
         url = f"https://api.dexscreener.com/latest/dex/tokens/{mint_address}"
         try:
             response = self.session.get(url, timeout=10)
@@ -156,20 +158,20 @@ class SolanaTokenSummary:
     # Birdeye Info
     # --------------------------
     
-    def _get_birdeye_token_security(self, mint_address: str) -> Optional[dict]:
+    def _birdeye_get_token_security(self, mint_address: str) -> Optional[dict]:
         """
         Get the token security information from the Birdeye API.
         @see https://docs.birdeye.so/reference/get-defi-token_security
         """
-        data = self._fetch_birdeye_api("defi/token_security", {"address": mint_address})
+        data = self._birdeye_fetch("defi/token_security", {"address": mint_address})
         return data.get("data") if data.get("success") else None
 
-    def _get_birdeye_pair_overview(self, pair_address: str) -> Optional[dict]:
+    def _birdeye_get_pair_overview(self, pair_address: str) -> Optional[dict]:
         """
         Get the overview information for a specific trading pair from the Birdeye API.
         @see https://docs.birdeye.so/reference/get-defi-v3-pair-overview-single
         """
-        data = self._fetch_birdeye_api(
+        data = self._birdeye_fetch(
             "defi/v3/pair/overview/single",
             {"address": pair_address, "ui_amount_mode": "scaled"}
         )
@@ -177,12 +179,12 @@ class SolanaTokenSummary:
             return None
         return data["data"]
 
-    def _get_birdeye_wallet_overview(self, wallet_address: str) -> Optional[dict]:
+    def _birdeye_get_wallet_overview(self, wallet_address: str) -> Optional[dict]:
         """
         Get the wallet overview information for a specific wallet from the Birdeye API.
         @see https://public-api.birdeye.so/wallet/v2/net-worth-details
         """
-        data = self._fetch_birdeye_api(
+        data = self._birdeye_fetch(
             "wallet/v2/net-worth-details",
             {
                 "wallet": wallet_address,
@@ -194,7 +196,7 @@ class SolanaTokenSummary:
         return data["data"]
 
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def _fetch_birdeye_api(self, method: str, params: dict) -> dict:
+    def _birdeye_fetch(self, method: str, params: dict) -> dict:
         url = f"https://public-api.birdeye.so/{method}"
         headers = {
             "x-chain": "solana",
@@ -213,7 +215,7 @@ class SolanaTokenSummary:
     # Helius Info
     # --------------------------
 
-    def _get_helius_wallet_tx(self, wallet_address: str, limit: int = 10) -> Optional[List[dict]]:
+    def _helius_get_wallet_tx(self, wallet_address: str, limit: int = 10) -> Optional[List[dict]]:
         """
         Get the transaction of a wallet.
 
@@ -223,7 +225,7 @@ class SolanaTokenSummary:
         Returns:
             Optional[dict]: The first transaction object, or None if not found/error.
         """
-        data = self._fetch_helius_api(
+        data = self._helius_fetch(
             f"v0/addresses/{wallet_address}/transactions",
             {
                 "limit": limit
@@ -239,7 +241,7 @@ class SolanaTokenSummary:
         return data
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def _fetch_helius_api(self, method: str, params: dict = None) -> dict:
+    def _helius_fetch(self, method: str, params: dict = None) -> dict:
         """
         Fetch data from the Helius API.
 
@@ -262,6 +264,77 @@ class SolanaTokenSummary:
             return response.json()
         except requests.RequestException as e:
             _log(f"Helius fetch error: {e}", level="ERROR")
+            return {}
+        
+    # --------------------------
+    # Solscan Info
+    # --------------------------
+    
+    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
+    def _solscan_estimate_wallet_age(self,  wallet_address: str) -> Optional[int]:
+        """
+        Estimate the wallet age based on its metadata.
+        
+        Args:
+            wallet_address (str): The wallet address.
+
+        Returns:
+            Optional[int]: The estimated wallet age in days, or None if not found.
+        """
+        metadata = self._solscan_get_wallet_metadata(wallet_address)
+        if not metadata:
+            return None
+        
+        # Age should be guessed by funded_by[block_time]
+        fund_block_time_timestamp = metadata.get("funded_by", {}).get("block_time")
+        age = Utils.get_days_since(fund_block_time_timestamp)
+        return age
+
+    def _solscan_get_wallet_metadata(self, wallet_address: str) -> Optional[dict]:
+        """
+        Get account metadata from Solscan.
+
+        Args:
+            wallet_address (str): The wallet address.
+
+        Returns:
+            Optional[dict]: Wallet metadata or None if not found.
+        """
+        data = self._solscan_fetch(
+            "account/metadata",
+            {"address": wallet_address}
+        )
+        _log("Wallet Metadata Solscan:", data)
+        if not data:
+            return None
+        return data.get("data", data) 
+
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def _solscan_fetch(self, method: str, params: dict = None) -> dict:
+        """
+        Fetch data from the Solscan Pro API.
+
+        Args:
+            method (str): The API method/endpoint (relative to base URL).
+            params (dict, optional): Query parameters.
+
+        Returns:
+            dict: The JSON response, or {} if error.
+        @see https://pro-api.solscan.io/pro-api-docs/v2.0
+        """
+        url = f"https://pro-api.solscan.io/v2.0/{method}"
+        headers = {
+            "accept": "application/json",
+            "token": self.solscan_api_key
+        }
+        params = params or {}
+
+        try:
+            response = self.session.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            _log(f"Solscan fetch error: {e}", level="ERROR")
             return {}
 
     # --------------------------
@@ -287,16 +360,16 @@ class SolanaTokenSummary:
         """
         
         # -- Birdeye data
-        be_security = self._get_birdeye_token_security(mint_address)
+        be_security = self._birdeye_get_token_security(mint_address)
         if not be_security:
             return {"error": "Token security info not found"}
 
-        be_overview = self._get_birdeye_pair_overview(pair_address)
+        be_overview = self._birdeye_get_pair_overview(pair_address)
         if not be_overview:
             return {"error": "Pair overview not found"}
 
         creator_address = be_security.get("creatorAddress", "")
-        be_wallet_overview = self._get_birdeye_wallet_overview(creator_address)
+        be_wallet_overview = self._birdeye_get_wallet_overview(creator_address)
         if not be_wallet_overview:
             return {"error": "Wallet overview not found"}
 
@@ -309,7 +382,7 @@ class SolanaTokenSummary:
         be_top_holders_percent = round(max((be_total_supply - be_held) / be_total_supply * 100, 0), 2) if be_total_supply > 0 else 0.0
         
         # -- Dexscreener data
-        dexscreener_info = self._get_dexscreener_token_pair_info(mint_address, pair_address) or {}
+        dexscreener_info = self._dexscreener_get_token_pair_info(mint_address, pair_address) or {}
 
         # Parse Dexscreener values safely
         dex_liquidity = dexscreener_info.get("liquidity", {})
@@ -325,11 +398,11 @@ class SolanaTokenSummary:
         pair_created_at = dexscreener_info.get("pairCreatedAt")
         
         # -- Solana network data
-        mint_info = self._get_mint_info(mint_address)
+        mint_info = self._rpc_get_mint_info(mint_address)
         if not mint_info:
             return {"error": "Mint address not found"}
-        nomint = self._check_nomint(mint_info)
-        wallet_age = self.get_wallet_age(creator_address)
+        nomint = self._rpc_check_nomint(mint_info)
+        wallet_age = self._solscan_estimate_wallet_age(creator_address)
 
         # -- Aggregate response
         return {
@@ -360,7 +433,7 @@ class SolanaTokenSummary:
             "be_creator_percentage": float(be_security.get("creatorPercentage", 0) or 0),
             "be_creator_address": be_security.get("creatorAddress"),
             "be_creator_net_worth_usd": float(be_wallet_overview.get("net_worth", 0) or 0),
-            "creator_wallet_age_days": wallet_age.get("age_days"),
+            "creator_wallet_age_days": wallet_age,
 
             # Birdeye Pair / Market info
             "be_liquidity_usd": be_overview.get("liquidity"),
