@@ -95,32 +95,82 @@ class AppData:
             return None
 
         return os.getenv(key_map.get(key))
+    
+    # --------------------------
+    # State Handling
+    # --------------------------
+
+    def get_state(self, key: str) -> Any:
+        """
+        Retrieve a value from the session state JSON file.
+
+        Args:
+            key (str): The key for the state variable to retrieve.
+
+        Returns:
+            Any: The value of the state variable, or None if the key or file does not exist.
+        """
+        state_file = self._get_storage_map()["session_state"]
+        if os.path.exists(state_file):
+            with open(state_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get(key)
+        return None
+
+    def set_state(self, key: str, value: Any) -> bool:
+        """
+        Save a key-value pair to the session state JSON file.
+
+        Args:
+            key (str): The key for the state variable.
+            value (Any): The value to save.
+
+        Returns:
+            bool: True if saved successfully, False otherwise.
+        """
+        state_file = self._get_storage_map()["session_state"]
+        data = {}
+        if os.path.exists(state_file):
+            with open(state_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        
+        data[key] = value
+        
+        return self._save_file(state_file, data)
 
     # --------------------------
     # File Operations
     # --------------------------
 
-    def _save_file(self, file_path: str, json: Union[str, dict]) -> bool:
+    def _save_file(self, file_path: str, data: Union[str, dict]) -> bool:
         """
-        Save data to a file.
+        Save data to a file, handling both dictionary and string inputs.
 
         Args:
             file_path (str): The file path to save the data to.
-            json (Union[str, dict]): The data to save, either as a JSON string or a dictionary.
+            data (Union[str, dict]): The data to save, either as a JSON string or a dictionary.
 
         Returns:
             bool: True if saved successfully, False otherwise.
         """
         folder = os.path.dirname(file_path)
         if not os.path.exists(folder):
-            os.makedirs(folder)
-
-        if isinstance(json, dict):
-            json = json.dumps(json, indent=4)
+            try:
+                os.makedirs(folder)
+            except OSError as e:
+                _log(f"Error creating directory {folder}: {e}", level="ERROR")
+                return False
 
         try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(json)
+            if isinstance(data, dict):
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=4)
+            elif isinstance(data, str):
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(data)
+            else:
+                _log(f"Unsupported data type: {type(data)}", level="ERROR")
+                return False
             return True
         except Exception as e:
             _log(f"Error saving data to file: {e}", level="ERROR")
@@ -156,6 +206,7 @@ class AppData:
         permanent_storage_dir = self.get_config("permanent_storage_dir")
         return {
             "image_cache": f"{temp_storage_dir}/_image-cache",
+            "session_state": f"{temp_storage_dir}/_session-state.json",
         }
 
     def get_assets_dir(self) -> str:

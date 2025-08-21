@@ -25,6 +25,120 @@ class BitQuerySolana:
         self.oauth_url = "https://oauth2.bitquery.io/oauth2/token"
         self.eap_url = "https://streaming.bitquery.io/eap"
         self.session = requests.Session()
+        self.IS_QUERYING = False
+
+    @cache_handler.cache(ttl_s=1)
+    def get_latest_tokens(
+          self,
+          platform: str = "pump.fun",
+          min_liquidity: float = 0.0,
+          max_liquidity: float = 1_000_000_000.0,
+          limit: int = 5
+        ) -> List[Dict]:
+        """
+        Get the most recent tokens created on a given platform (e.g., pump.fun).
+
+        Args:
+            platform (str): The DEX/program name address (default: pump.fun).
+            min_liquidity (float): Minimum liquidity in USD.
+            max_liquidity (float): Maximum liquidity in USD.
+            limit (int): Number of recent tokens to retrieve.
+
+        Returns:
+            list: A list of recent token creation data.
+        """
+
+        platform_map = {
+            "pump.fun": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+        }
+
+        # Use the platform map to get the correct address or fallback to the provided platform address
+        platform_address = platform_map.get(platform, platform)
+
+        query = """
+        query Q(
+          $platformAddress: String!,
+          $minLiquidity: String!,
+          $maxLiquidity: String!,
+          $limit: Int!
+        ) {
+          Solana {
+            DEXPools(
+              limit: { count: $limit }
+              orderBy: { descending: Block_Time }
+              where: {
+                Pool: {
+                  Dex: {
+                    ProgramAddress: { is: $platformAddress }
+                  }
+                  Quote: {
+                    PostAmountInUSD: { 
+                      ge: $minLiquidity, 
+                      le: $maxLiquidity 
+                    }
+                  }
+                }
+                Transaction: {
+                  Result: { Success: true }
+                }
+              }
+            ) {
+              Pool {
+                Market {
+                  MarketAddress
+                  BaseCurrency {
+                    Name
+                    Symbol
+                    MintAddress
+                    Uri
+                    Decimals
+                  }
+                  QuoteCurrency {
+                    Name
+                    Symbol
+                    MintAddress
+                  }
+                }
+                Base {
+                  PostAmount
+                }
+                Quote {
+                  PostAmount
+                  PostAmountInUSD
+                  PriceInUSD
+                }
+              }
+            }
+          }
+        }
+        """
+
+        variables = {
+            "platformAddress": platform_address,
+            "minLiquidity": min_liquidity,
+            "maxLiquidity": max_liquidity,
+            "limit": limit
+        }
+
+        payload = {
+            "query": query,
+            "variables": variables
+        }
+
+        _log("BitQuery Query:", query)
+        _log("BitQuery Variables:", variables)
+
+        response_data = self._fetch(
+            url=self.eap_url,
+            method="post",
+            data=json.dumps(payload),
+        )
+
+        try:
+            return response_data["data"]["Solana"]["DEXPools"]
+        except (KeyError, TypeError) as e:
+            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
+            return []
 
     @cache_handler.cache(ttl_s=1)
     def get_recent_coin_trades(self, mint_address: str, limit: int = 10) -> List[Dict]:
@@ -85,10 +199,6 @@ class BitQuerySolana:
             "query": query,
             "variables": variables
         }
-        
-        
-        _log("BitQuery Query:", query)
-        _log("BitQuery Variables:", variables)
 
         response_data = self._fetch(
             url=self.eap_url, 
@@ -153,9 +263,64 @@ class BitQuerySolana:
         except (KeyError, TypeError, IndexError) as e:
             _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
             return None
+
+    @cache_handler.cache(ttl_s=60 * 60 * 24)
+    def get_wallet_age_days(self, wallet_address: str) -> Optional[dict]:
+        """
+        Get the wallet age (based on the first transaction) for a Solana wallet.
+        Returns a dict with block time, date, number, and signature if available.
+        """
+
+        query = """
+        query GetWalletAge($wallet_address: String!) {
+          Solana {
+            Transactions(
+              limit: { count: 1 }
+              orderBy: { ascending: Block_Time }
+              where: {
+                Transaction: {
+                  Signer: { is: $wallet_address }
+                }
+              }
+            ) {
+              Block {
+                Time
+                Date
+              }
+              Transaction {
+                Signature
+                Signer
+              }
+            }
+          }
+        }
+        """
+
+        variables = {
+            "wallet_address": wallet_address,
+        }
+
+        payload = {
+            "query": query,
+            "variables": variables,
+        }
+
+        response_data = self._fetch(
+            url=self.eap_url,
+            method="post",
+            data=json.dumps(payload),
+        )
+
+        try:
+            tx = response_data["data"]["Solana"]["Transactions"][0]
+            block_date = tx["Block"]["Date"]
+            return Utils.get_days_since(block_date)
+        except (KeyError, TypeError, IndexError) as e:
+            _log(f"Error parsing BitQuery response or wallet not found: {e}", level="ERROR")
+            return None
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def get_gmgn_token_pair_summary(
+    def get_token_pair_summary(
           self,
           mint_adress: str,
           pair_address: str,
@@ -299,12 +464,13 @@ class BitQuerySolana:
         )
         
         try:
-            return response_data["data"]["Solana"]["DEXTradeByTokens"][0]
+            response_data = response_data["data"]["Solana"]["DEXTradeByTokens"]
+            return len(response_data) > 0 and response_data[0] or None
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return None
 
-    def get_gmgn_token_pair_summary_df(
+    def get_token_pair_summary_df(
           self,
           mint_adress: str,
           pair_address: str,
@@ -323,8 +489,10 @@ class BitQuerySolana:
         Returns:
             pd.DataFrame: A DataFrame containing the token's summary statistics.
         """
-        summary = self.get_gmgn_token_pair_summary(mint_adress, pair_address, side_token, time)
-        
+        summary = self.get_token_pair_summary(mint_adress, pair_address, side_token, time)
+        if not summary:
+            return pd.DataFrame()
+
         # Flatten the Trade section
         flat = {}
         trade = summary.get("Trade", {})
@@ -349,7 +517,7 @@ class BitQuerySolana:
         return df
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def get_gmgn_liquidity_pool_for_pair(
+    def get_liquidity_pool_for_pair(
           self,
           pair_address: str,
           time: Optional[str] = None
@@ -430,7 +598,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
-    def get_gmgn_recent_token_pair_trades(
+    def get_recent_token_pair_trades(
           self,
           mint_address: str,
           pair_address: str,
@@ -514,7 +682,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
-    def get_gmgn_recent_token_pair_trades_df(
+    def get_recent_token_pair_trades_df(
           self,
           mint_address: str,
           pair_address: str,
@@ -531,7 +699,7 @@ class BitQuerySolana:
         Returns:
             pd.DataFrame: A DataFrame containing the token's recent trade data.
         """
-        trades = self.get_gmgn_recent_token_pair_trades(
+        trades = self.get_recent_token_pair_trades(
             mint_address=mint_address,
             pair_address=pair_address,
             side_token=side_token
@@ -621,20 +789,24 @@ class BitQuerySolana:
           _log(f"Error generating BitQuery access token: {e}", level="ERROR")
           return None
           
-    def _fetch(_self, url: str, method: str = "get", params: Optional[dict] = None, data: Optional[Any] = None, headers: Optional[dict] = None):
+    def _fetch(self, url: str, method: str = "get", params: Optional[dict] = None, data: Optional[Any] = None, headers: Optional[dict] = None):
         """
         Fetches data from the specified URL using a common API call.
         
         This method handles both GET and POST requests and includes headers.
         """
+        if self.IS_QUERYING:
+            _log("Query is already in progress", level="WARNING")
+            return {"error": "Query is already in progress"}
+
         if not url.startswith("http"):
-            url = _self.base_url + url
+            url = self.base_url + url
 
         if headers is None:
             headers = {}
         
         # Generate and use the OAuth2 access token
-        access_token = _self._get_access_token()
+        access_token = self._get_access_token()
         if not access_token:
             raise RuntimeError("Failed to obtain BitQuery access token.")
             
@@ -642,11 +814,15 @@ class BitQuerySolana:
         headers["Content-Type"] = "application/json"
         
         if method.lower() == "get":
-            response = _self.session.get(url, params=params, headers=headers)
+            self.IS_QUERYING = True
+            response = self.session.get(url, params=params, headers=headers)
         elif method.lower() == "post":
-            response = _self.session.post(url, data=data, headers=headers)
+            self.IS_QUERYING = True
+            response = self.session.post(url, data=data, headers=headers)
         else:
+            self.IS_QUERYING = False
             raise ValueError(f"Unsupported HTTP method: {method}")
 
+        self.IS_QUERYING = False
         response.raise_for_status()
         return response.json()

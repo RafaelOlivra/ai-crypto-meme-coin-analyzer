@@ -1,9 +1,11 @@
 import streamlit as st
+import json
 from dotenv import load_dotenv, find_dotenv
 
 from services.AppData import AppData
 from services.BitQuerySolana import BitQuerySolana
 from services.SolanaTokenSummary import SolanaTokenSummary
+from services.CoinGecko import CoinGecko
 
 # --------------------------
 # Configurations
@@ -17,9 +19,13 @@ load_dotenv(find_dotenv("../.env"))
 # Page
 # ---------------------------
 def Home():
+    
+    app_data = AppData()
+    bitquery = BitQuerySolana()
+    solana = SolanaTokenSummary()
 
     # Set logo
-    assets_dir = AppData().get_assets_dir()
+    assets_dir = app_data.get_assets_dir()
     # st.logo(f"{assets_dir}logo.svg", size="large")
 
     # Set page title
@@ -31,39 +37,102 @@ def Home():
 
     st.title("🐸 Meme Coin Analyzer")
     
-    bitquery = BitQuerySolana()
-    solana = SolanaTokenSummary()
-    
+    # Get latest meme coins from BitQuery
+    coins = app_data.get_state("latest_tokens")
+    if not coins:
+        coins = {}
+        meme_coins = bitquery.get_latest_tokens(platform="pump.fun", min_liquidity=10000, limit=10)
+
+        # Temporary dict to keep best version per mint
+        best_coins = {}
+
+        for coin in meme_coins:
+            details = coin["Pool"]
+            base = details['Market']['BaseCurrency']
+            mint = base['MintAddress']
+            post_amount = float(details['Base']['PostAmount'])
+
+            # If mint not seen yet, or current has higher PostAmount, update it
+            if mint not in best_coins or post_amount > best_coins[mint]['post_amount']:
+                best_coins[mint] = {
+                    "name": base['Name'],
+                    "symbol": base['Symbol'],
+                    "mint": mint,
+                    "pair": details['Market']['MarketAddress'],
+                    "post_amount": post_amount
+                }
+
+        # Build final dict for session state
+        for mint, data in best_coins.items():
+            coins[data["name"] + " (" + data["symbol"] + ")"] = {
+                "mint": data["mint"],
+                "pair": data["pair"]
+            }
+        app_data.set_state("latest_tokens", coins)
+
     addresses = {
         "BILLY": {
             "mint": "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump",
             "pair": "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
         },
-        "RIZZMASTER": {
-            "mint": "2BpJpCW9LfSPbgsgNKcFoxz96Cs8J8NZsi6PZJcHpump",
-            "pair": "Af5op3qJJ87sU4GJqjKX9isJEJGHkzHvxRQRoWmPCfxw"
+        "YIPITI": {
+            "mint": "8UoDzy35biTQrGzHkDLzN9S4gyGb5bNLijFQywF9pump",
+            "pair": "9JzoQY96wc3uC19HFLLKmjTKQ9DfUkm9wiM5KcsxN2jb"
         },
-        "COINDESK": {
-            "mint": "8Kzsuu3Rpgo21aoyrxmU59dQT43QeEr429WnAPYHuL1q",
-            "pair": "BYQkNGjvPAutJuZ5jNPg7zYuZ2B3yoRJgUCH647HRycg"
+        "BITCOIN": {
+            "mint": "66X4jLEvSgtpmKowfCEr8LBW7GZfdK8MPVfnyYApump",
+            "pair": "6Vz9w6jRvJ4A3AQ2aEzqfhNCV2kiBN31HYBQADRGU3hj"
+        },
+        "PENGU": {
+            "mint": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
+            "pair": "C6ELogyx2aAd4FfMS9YcVQ284sPvD454hNaFGj7WFYYh"
         }
     }
 
-    token_selector = st.selectbox("Select a token", options=list(addresses.keys()))
-    
-    token = addresses[token_selector]["mint"]
-    pair_address = addresses[token_selector]["pair"]
+    # Merge with existing addresses
+    addresses.update(coins)
 
-    st.markdown("### Token Summary (BirdEye+Dexscreener)")
+    # Add coin selector
+    current_latest_token = app_data.get_state("current_latest_token")
+    index = list(addresses.keys()).index(current_latest_token) if current_latest_token in addresses else 0
+    current_latest_token = st.selectbox("Select a token", options=list(addresses.keys()), index=index)
+    app_data.set_state("current_latest_token", current_latest_token)
+
+    token = addresses[current_latest_token]["mint"]
+    pair_address = addresses[current_latest_token]["pair"]
+
+    st.markdown("### Token Summary (BirdEye + Dexscreener)")
     df_status = solana.get_token_summary_df(token, pair_address)
+
+    # Convert any json cells to string
+    df_status = df_status.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
+
     st.dataframe(df_status.T.rename_axis("Agg Token Summary"), use_container_width=True)
 
     st.markdown("### Token Summary (BitQuery)")
-    df_summary = bitquery.get_gmgn_token_pair_summary_df(token, pair_address)
+    df_summary = bitquery.get_token_pair_summary_df(token, pair_address)
     st.dataframe(df_summary.T.rename_axis("BitQuery Summary"), use_container_width=True)
 
-    st.markdown("### Recent Trades  (BitQuery)")
-    st.dataframe(bitquery.get_gmgn_recent_token_pair_trades_df(token, pair_address), use_container_width=True)
+    st.markdown("### Recent Trades (BitQuery)")
+    df_recent_transactions = bitquery.get_recent_token_pair_trades_df(token, pair_address)
+    st.dataframe(df_recent_transactions, use_container_width=True)
+    
+
+    st.markdown("### Processed DataFrame")
+    # Get transaction_maker_wallet_age for every transaction_maker
+    # Using get_wallet_age
+    # for _, tx in df_recent_transactions.iterrows():
+    #     maker = tx['transaction_maker']
+    #     wallet_age = solana.get_wallet_age(maker)
+    #     tx['transaction_maker_wallet_age_days'] = wallet_age
+    df_recent_transactions['transaction_maker_wallet_age_days'] = df_recent_transactions['transaction_maker'].apply(bitquery.get_wallet_age_days)
+
+    # Merge the token status df (Since it is 1 row, copy it for each transaction)
+    df_status = df_status.merge(df_summary, how="cross")
+    df_recent_transactions = df_status.merge(df_recent_transactions, how="cross")
+
+    st.dataframe(df_recent_transactions, use_container_width=True)
+
 
     # col1, col2 = st.columns(2)
     # with col1:

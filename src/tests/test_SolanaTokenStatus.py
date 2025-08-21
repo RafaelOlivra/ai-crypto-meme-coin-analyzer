@@ -14,11 +14,12 @@ def test_get_mint_info():
 
 def test_get_wallet_age():
     solana = SolanaTokenSummary()
-    wallet_age = solana.get_wallet_age("GixMsyA2jeAoUEQkF2vZD77DdGGh7FFyW8qsezetyEs3")
+    wallet_age = solana.get_wallet_age("2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T")
     assert isinstance(wallet_age, dict)
     _log("Wallet age:", wallet_age)
     assert "first_tx_time" in wallet_age
     assert "age_days" in wallet_age
+    assert wallet_age["age_days"] > 18
 
 def test_get_birdeye_token_security():
     solana = SolanaTokenSummary()
@@ -31,6 +32,7 @@ def test_get_birdeye_token_security():
 def test_get_birdeye_wallet_overview():
     solana = SolanaTokenSummary()
     wallet_info = solana._get_birdeye_wallet_overview("GixMsyA2jeAoUEQkF2vZD77DdGGh7FFyW8qsezetyEs3")
+    _log("Wallet overview:", wallet_info)
     assert isinstance(wallet_info, dict)
     assert "net_worth" in wallet_info
 

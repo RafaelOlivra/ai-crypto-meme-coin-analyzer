@@ -218,3 +218,19 @@ class Utils:
             )
 
         return _date
+    
+    @staticmethod
+    def get_days_since(_date: str | date | datetime | int) -> int:
+        """
+        Get the number of days since a given date.
+
+        Args:
+            _date (str | date): The date string to compare.
+
+        Returns:
+            int: The number of days since the given date.
+        """
+        date = Utils.to_datetime(_date)
+        if not date:
+            return 0
+        return (datetime.now() - date).days

@@ -1,5 +1,6 @@
-import json
+import time
 import requests
+from requests.exceptions import RequestException
 import pandas as pd
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -46,6 +47,7 @@ class SolanaTokenSummary:
         except (KeyError, TypeError):
             return []
     
+    # @cache_handler.cache(ttl_s=60 * 60 * 24)
     def get_wallet_age(self, wallet_address: str) -> Dict[str, Any]:
         """
         Get the wallet age (days since first transaction).
@@ -72,7 +74,7 @@ class SolanaTokenSummary:
                 break
 
         if not oldest_sig:
-            return {"error": "No transactions found for this wallet."}
+            return {"error": "No transactions found for this wallet: " + wallet_address}
 
         # Fetch transaction details to get blockTime
         tx_data = self._fetch_solana_rpc("getTransaction", [oldest_sig, {"encoding": "json"}])
@@ -96,19 +98,29 @@ class SolanaTokenSummary:
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _fetch_solana_rpc(self, method: str, params: list) -> dict:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": method,
-            "params": params
-        }
-        try:
-            response = self.session.post(self.rpc_url, json=payload)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            _log(f"Solana RPC fetch error: {e}", level="ERROR")
-            return {}
+        """
+        Fetches data from the Solana RPC endpoint with retry logic.
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": method,
+                "params": params
+            }
+            try:
+                response = self.session.post(self.rpc_url, json=payload, timeout=10) # Added a timeout
+                response.raise_for_status()
+                return response.json()
+            except RequestException as e:
+                _log(f"Solana RPC fetch error on attempt {attempt + 1}/{max_retries}: {e}", level="ERROR")
+                if attempt < max_retries - 1:
+                    _log("Retrying in 3 seconds...", level="INFO")
+                    time.sleep(3) # Delay for 3 seconds before retrying
+
+        _log(f"All {max_retries} attempts failed for method {method}.", level="CRITICAL")
+        return {}
 
     # --------------------------
     # Dexscreener Info
@@ -198,7 +210,7 @@ class SolanaTokenSummary:
     # --------------------------
     # Aggregated Info
     # --------------------------
-
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_token_summary(
         self, 
         mint_address: str, 
@@ -231,10 +243,10 @@ class SolanaTokenSummary:
             return {"error": "Wallet overview not found"}
 
         # Calculate BurntPercent-like metric
-        be_total_supply = float(be_security.get("totalSupply", 0))
-        be_top10 = float(be_security.get("top10HolderBalance", 0))
-        be_creator = float(be_security.get("creatorBalance", 0))
-        be_owner = float(be_security.get("ownerBalance") or 0)
+        be_total_supply = float(be_security.get("totalSupply", 0) or 0)
+        be_top10 = float(be_security.get("top10HolderBalance", 0) or 0)
+        be_creator = float(be_security.get("creatorBalance", 0) or 0)
+        be_owner = float(be_security.get("ownerBalance", 0) or 0)
         be_held = be_top10 + be_creator + be_owner
         be_top_holders_percent = round(max((be_total_supply - be_held) / be_total_supply * 100, 0), 2) if be_total_supply > 0 else 0.0
         
@@ -287,9 +299,9 @@ class SolanaTokenSummary:
             "be_transfer_fee_enable": be_security.get("transferFeeEnable"),
 
             # Birdeye Creator info
-            "be_creator_percentage": float(be_security.get("creatorPercentage", 0)),
+            "be_creator_percentage": float(be_security.get("creatorPercentage", 0) or 0),
             "be_creator_address": be_security.get("creatorAddress"),
-            "be_creator_net_worth_usd": float(be_wallet_overview.get("net_worth", 0)),
+            "be_creator_net_worth_usd": float(be_wallet_overview.get("net_worth", 0) or 0),
             "creator_wallet_age_days": wallet_age.get("age_days"),
 
             # Birdeye Pair / Market info
