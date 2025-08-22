@@ -42,6 +42,14 @@ def test_get_birdeye_wallet_overview():
     
 ## Solscan
 
+def test_get_wallet_metadata():
+    solana = SolanaTokenSummary()
+    metadata = solana._solscan_get_wallet_metadata("7LzGC6FTqgsdkK8CHtokoECWLzzp9VnJiHqfcuHYiMxf")
+    _log("Wallet Metadata Solscan:", metadata)
+    assert isinstance(metadata, dict)
+    assert "account_address" in metadata
+    assert "funded_by" in metadata
+
 def test_estimate_solscan_wallet_age():
     solana = SolanaTokenSummary()
     wallet_age = solana._solscan_estimate_wallet_age("7LzGC6FTqgsdkK8CHtokoECWLzzp9VnJiHqfcuHYiMxf")

@@ -12,6 +12,7 @@ from lib.Utils import Utils
 from services.log.Logger import _log
 
 DEFAULT_CACHE_TTL = 300
+MINUTE_IN_SECONDS = 60
 DAYS_IN_SECONDS = 24 * 60 * 60
 
 class SolanaTokenSummary:
@@ -290,6 +291,7 @@ class SolanaTokenSummary:
         age = Utils.get_days_since(fund_block_time_timestamp)
         return age
 
+    @cache_handler.cache(ttl_s=MINUTE_IN_SECONDS * 2)
     def _solscan_get_wallet_metadata(self, wallet_address: str) -> Optional[dict]:
         """
         Get account metadata from Solscan.
@@ -304,7 +306,6 @@ class SolanaTokenSummary:
             "account/metadata",
             {"address": wallet_address}
         )
-        _log("Wallet Metadata Solscan:", data)
         if not data:
             return None
         return data.get("data", data) 
@@ -402,17 +403,27 @@ class SolanaTokenSummary:
         if not mint_info:
             return {"error": "Mint address not found"}
         nomint = self._rpc_check_nomint(mint_info)
+        
+        # -- Solscan
+        wallet_metadata = self._solscan_get_wallet_metadata(creator_address)
+        wallet_funded_by = wallet_metadata.get("funded_by", {}).get("funded_by", "UNKNOWN")
         wallet_age = self._solscan_estimate_wallet_age(creator_address)
 
         # -- Aggregate response
         return {
-            # Basic token info
+            #-- Solana network data
             "no_mint": nomint,
             "mint_address": mint_address,
             "pair_address": pair_address,
             # **concentration,
 
-            # Birdeye Security & creator info (Birdeye)
+            # Solscan
+            "ss_creator_wallet_funded_by": wallet_funded_by,
+            "ss_creator_wallet_age_days": wallet_age,
+
+            # -- Birdeye
+            
+            # Security & Creator info (Birdeye)
             "be_top10_holders_plus_creator_percentage": be_top_holders_percent,
             "be_creation_tx": be_security.get("creationTx"),
             "be_creation_time": be_security.get("creationTime"),
@@ -429,19 +440,19 @@ class SolanaTokenSummary:
             "be_pre_market_holder": be_security.get("preMarketHolder"),
             "be_transfer_fee_enable": be_security.get("transferFeeEnable"),
 
-            # Birdeye Creator info
+            # Creator Info
             "be_creator_percentage": float(be_security.get("creatorPercentage", 0) or 0),
             "be_creator_address": be_security.get("creatorAddress"),
             "be_creator_net_worth_usd": float(be_wallet_overview.get("net_worth", 0) or 0),
-            "creator_wallet_age_days": wallet_age,
 
-            # Birdeye Pair / Market info
+            # Pair / Market info
             "be_liquidity_usd": be_overview.get("liquidity"),
             "be_price_usd": be_overview.get("price"),
             "be_volume_24h_usd": be_overview.get("volume_24h"),
             "be_unique_wallets_24h": be_overview.get("unique_wallet_24h"),
-            
-            # Dexscreener extras
+
+            # -- Dexscreener
+            # Extras
             "dex_price_usd": dexscreener_info.get("priceUsd"),
             "dex_liquidity_usd": liquidity_usd_dex,
             "dex_liquidity_base": dex_liquidity.get("base"),
@@ -451,7 +462,7 @@ class SolanaTokenSummary:
             "dex_liq_fdv_ratio": liq_fdv_ratio,
             "dex_pair_age": pair_created_at,
 
-            # Volume & transaction momentum
+            # Volume & Transaction Momentum
             "dex_volume_h24": dexscreener_info.get("volume", {}).get("h24"),
             "dex_volume_h6": dexscreener_info.get("volume", {}).get("h6"),
             "dex_volume_h1": dexscreener_info.get("volume", {}).get("h1"),

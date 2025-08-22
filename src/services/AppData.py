@@ -142,6 +142,14 @@ class AppData:
         Returns:
             bool: True if saved successfully, False otherwise.
         """
+        if not key or not isinstance(key, str):
+            _log(f"Invalid key: {key}", level="ERROR")
+            return False
+
+        # If value is none, clear the state
+        if value is None:
+            return self.clear_state(key)
+
         state_file = self._get_storage_map()["session_state"]
         data = {}
         if os.path.exists(state_file):
@@ -153,6 +161,25 @@ class AppData:
 
         return self._save_file(state_file, data)
     
+    def clear_state(self, key: str) -> bool:
+        """
+        Clear a specific key from the session state JSON file.
+
+        Args:
+            key (str): The key for the state variable to clear.
+
+        Returns:
+            bool: True if cleared successfully, False otherwise.
+        """
+        state_file = self._get_storage_map()["session_state"]
+        if os.path.exists(state_file):
+            with open(state_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if key in data:
+                    del data[key]
+                    return self._save_file(state_file, data)
+        return False
+
     # --------------------------
     # File Operations
     # --------------------------

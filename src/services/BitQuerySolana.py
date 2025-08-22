@@ -123,9 +123,6 @@ class BitQuerySolana:
             "variables": variables
         }
 
-        _log("BitQuery Query:", query)
-        _log("BitQuery Variables:", variables)
-
         response_data = self._fetch(
             url=self.eap_url,
             method="post",
@@ -312,7 +309,6 @@ class BitQuerySolana:
             tx = response_data["data"]["solana"]["transfers"][0]
             block_date = tx["minimum"]
             age = Utils.get_days_since(block_date, format="%Y-%m-%d %H:%M:%S %Z")
-            _log(f"Wallet {wallet_address} age: {age} days (first tx on {block_date})")
             return age
           
         except (KeyError, TypeError, IndexError) as e:
@@ -371,7 +367,6 @@ class BitQuerySolana:
                 if block_date:
                     age = Utils.get_days_since(block_date, format="%Y-%m-%d %H:%M:%S %Z")
                     results[wallet_address] = age
-                    _log(f"Wallet {wallet_address} age: {age} days (first tx on {block_date})")
                 else:
                     results[wallet_address] = None
 
@@ -653,7 +648,6 @@ class BitQuerySolana:
         )
         
         try:
-            # _log("BitQuery", response_data)
             return response_data["data"]["Solana"]["DEXPools"][0]
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
@@ -720,6 +714,7 @@ class BitQuerySolana:
           }
         }
         """
+        
         variables = {
           "mintAddress": mint_address,
           "pairAddress": pair_address,
@@ -738,7 +733,6 @@ class BitQuerySolana:
         )
         
         try:
-            # _log("BitQuery", response_data)
             return response_data["data"]["Solana"]["DEXTradeByTokens"]
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")

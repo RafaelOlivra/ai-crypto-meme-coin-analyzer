@@ -34,65 +34,74 @@ def Home():
     # Styles
     with open(f"{assets_dir}style.css") as css:
         st.markdown(f"<style>{css.read()}</style>", unsafe_allow_html=True)
-
+    
     st.title("🐸 Meme Coin Analyzer")
     
-    # Get latest meme coins from BitQuery
-    coins = app_data.get_state("latest_tokens")
-    if not coins:
-        coins = {}
-        meme_coins = bitquery.get_latest_tokens(platform="pump.fun", min_liquidity=10000, limit=10)
+    
+    
+    col1, col2 = st.columns([8, 2])
+    
+    with col2:
+        if st.button("Refresh Tokens", use_container_width=True):
+            app_data.clear_state("latest_tokens")
 
-        # Temporary dict to keep best version per mint
-        best_coins = {}
+    with col1:
+        # Get latest meme coins from BitQuery
+        coins = app_data.get_state("latest_tokens")
+        if not coins:
+            coins = {}
+            meme_coins = bitquery.get_latest_tokens(platform="pump.fun", min_liquidity=10000, limit=20)
 
-        for coin in meme_coins:
-            details = coin["Pool"]
-            base = details['Market']['BaseCurrency']
-            mint = base['MintAddress']
-            post_amount = float(details['Base']['PostAmount'])
+            # Temporary dict to keep best version per mint
+            best_coins = {}
 
-            # If mint not seen yet, or current has higher PostAmount, update it
-            if mint not in best_coins or post_amount > best_coins[mint]['post_amount']:
-                best_coins[mint] = {
-                    "name": base['Name'],
-                    "symbol": base['Symbol'],
-                    "mint": mint,
-                    "pair": details['Market']['MarketAddress'],
-                    "post_amount": post_amount
+            for coin in meme_coins:
+                details = coin["Pool"]
+                base = details['Market']['BaseCurrency']
+                mint = base['MintAddress']
+                post_amount = float(details['Base']['PostAmount'])
+
+                # If mint not seen yet, or current has higher PostAmount, update it
+                if mint not in best_coins or post_amount > best_coins[mint]['post_amount']:
+                    best_coins[mint] = {
+                        "name": base['Name'],
+                        "symbol": base['Symbol'],
+                        "mint": mint,
+                        "pair": details['Market']['MarketAddress'],
+                        "post_amount": post_amount
+                    }
+
+            # Build final dict for session state
+            for mint, data in best_coins.items():
+                coins[data["name"] + " (" + data["symbol"] + ")"] = {
+                    "mint": data["mint"],
+                    "pair": data["pair"]
                 }
+            app_data.set_state("latest_tokens", coins, ttl=60)
 
-        # Build final dict for session state
-        for mint, data in best_coins.items():
-            coins[data["name"] + " (" + data["symbol"] + ")"] = {
-                "mint": data["mint"],
-                "pair": data["pair"]
+        addresses = {
+            "BILLY": {
+                "mint": "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump",
+                "pair": "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
+            },
+            "INN0": {
+                "mint": "E8uL1V5kxzgMSiTczapzocaneGwBreGdKL6SzW2Fpump",
+                "pair": "4CjK8NS1EAu3DpJUMBCV1CbPEGLsZMSem5R5ctZ7mSV4"
+            },
+            "PENGU": {
+                "mint": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
+                "pair": "C6ELogyx2aAd4FfMS9YcVQ284sPvD454hNaFGj7WFYYh"
             }
-        app_data.set_state("latest_tokens", coins, ttl=60)
-
-    addresses = {
-        "BILLY": {
-            "mint": "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump",
-            "pair": "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
-        },
-        "INN0": {
-            "mint": "E8uL1V5kxzgMSiTczapzocaneGwBreGdKL6SzW2Fpump",
-            "pair": "4CjK8NS1EAu3DpJUMBCV1CbPEGLsZMSem5R5ctZ7mSV4"
-        },
-        "PENGU": {
-            "mint": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
-            "pair": "C6ELogyx2aAd4FfMS9YcVQ284sPvD454hNaFGj7WFYYh"
         }
-    }
 
-    # Merge with existing addresses
-    addresses.update(coins)
+        # Merge with existing addresses
+        addresses.update(coins)
 
-    # Add coin selector
-    current_latest_token = app_data.get_state("current_latest_token")
-    index = list(addresses.keys()).index(current_latest_token) if current_latest_token in addresses else 0
-    current_latest_token = st.selectbox("Select a token", options=list(addresses.keys()), index=index)
-    app_data.set_state("current_latest_token", current_latest_token)
+        # Add coin selector
+        current_latest_token = app_data.get_state("current_latest_token")
+        index = list(addresses.keys()).index(current_latest_token) if current_latest_token in addresses else 0
+        current_latest_token = st.selectbox("Select a token", options=list(addresses.keys()), index=index)
+        app_data.set_state("current_latest_token", current_latest_token)
 
     token = addresses[current_latest_token]["mint"]
     pair_address = addresses[current_latest_token]["pair"]
