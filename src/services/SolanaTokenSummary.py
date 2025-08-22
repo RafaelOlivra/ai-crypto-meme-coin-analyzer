@@ -126,6 +126,67 @@ class SolanaTokenSummary:
 
         _log(f"All {max_retries} attempts failed for method {method}.", level="ERROR")
         return {}
+    
+    # --------------------------
+    # RUG CHECK Info
+    # --------------------------
+    def _rugcheck_get_token_info(self, mint_address: str) -> Optional[dict]:
+        return self._rugcheck_fetch(mint_address)
+
+    def _rugcheck_check_mint_authority(self, mint_address: str) -> bool:
+        token_info = self._rugcheck_get_token_info(mint_address)
+        if not token_info:
+            return False
+        return token_info.get("token", {}).get("mintAuthority") is not None
+
+    def _rugcheck_get_token_risks(self, mint_address: str) -> list[str]:
+        token_info = self._rugcheck_get_token_info(mint_address)
+        if not token_info:
+            return []
+        risks = token_info.get("risks", [])
+        return [risk["name"] for risk in risks]
+
+    def _rugcheck_check_is_mutable(self, mint_address: str) -> bool:
+        token_info = self._rugcheck_get_token_info(mint_address)
+        if not token_info:
+            return False
+        return token_info.get("tokenMeta", {}).get("isMutable") is not None
+
+    def _rugcheck_check_freeze_authority(self, mint_address: str) -> bool:
+        token_info = self._rugcheck_get_token_info(mint_address)
+        if not token_info:
+            return False
+        return token_info.get("token", {}).get("freezeAuthority") is not None
+
+    def _rugcheck_get_market_data(self, mint_address: str, pair_address: str) -> Optional[dict]:
+        data = self._rugcheck_fetch(mint_address)
+        markets = data.get("markets", {})
+        if not markets:
+            return None
+        for market in markets:
+            if market.get("pubkey") == pair_address:
+                return market
+        return None
+    
+    def _rugcheck_get_liquidity_locked(self, mint_address: str, pair_address: str) ->bool:
+        market_data = self._rugcheck_get_market_data(mint_address, pair_address)
+        if not market_data:
+            return False
+        return market_data.get("lp", {}).get("lpLocked", 0)
+    
+    def _rugcheck_is_liquidity_locked(self, mint_address: str, pair_address: str) ->bool:
+        return self._rugcheck_get_liquidity_locked(mint_address, pair_address) > 1
+
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def _rugcheck_fetch(self, mint_address: str) -> dict:
+        url = f"https://api.rugcheck.xyz/v1/tokens/{mint_address}/report"
+        try:
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            _log(f"RugCheck fetch error: {e}", level="ERROR")
+            return {}
 
     # --------------------------
     # Dexscreener Info
@@ -397,13 +458,15 @@ class SolanaTokenSummary:
 
         # Token age
         pair_created_at = dexscreener_info.get("pairCreatedAt")
-        
-        # -- Solana network data
-        mint_info = self._rpc_get_mint_info(mint_address)
-        if not mint_info:
-            return {"error": "Mint address not found"}
-        nomint = self._rpc_check_nomint(mint_info)
-        
+
+        # -- RUG CHECK
+        score = self._rugcheck_get_token_info(mint_address).get("score_normalised", 0)
+        risks = self._rugcheck_get_token_risks(mint_address)
+        nomint = self._rugcheck_check_mint_authority(mint_address)
+        is_mutable = self._rugcheck_check_is_mutable(mint_address)
+        is_frozen = self._rugcheck_check_freeze_authority(mint_address)
+        lp_locked = self._rugcheck_get_liquidity_locked(mint_address, pair_address)
+
         # -- Solscan
         wallet_metadata = self._solscan_get_wallet_metadata(creator_address)
         wallet_funded_by = wallet_metadata.get("funded_by", {}).get("funded_by", "UNKNOWN")
@@ -411,13 +474,19 @@ class SolanaTokenSummary:
 
         # -- Aggregate response
         return {
-            #-- Solana network data
-            "no_mint": nomint,
             "mint_address": mint_address,
             "pair_address": pair_address,
             # **concentration,
 
-            # Solscan
+            #-- RUG CHECK data
+            "rc_risk_score": score,
+            "rc_risks": risks,
+            "rc_no_mint": nomint,
+            "rc_is_mutable": is_mutable,
+            "rc_is_frozen": is_frozen,
+            "rc_liquidity_locked": lp_locked,
+
+            # -- Solscan
             "ss_creator_wallet_funded_by": wallet_funded_by,
             "ss_creator_wallet_age_days": wallet_age,
 

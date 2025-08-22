@@ -1,3 +1,4 @@
+from turtle import pd
 import streamlit as st
 import json
 from dotenv import load_dotenv, find_dotenv
@@ -36,8 +37,6 @@ def Home():
         st.markdown(f"<style>{css.read()}</style>", unsafe_allow_html=True)
     
     st.title("🐸 Meme Coin Analyzer")
-    
-    
     
     col1, col2 = st.columns([8, 2])
     
@@ -119,18 +118,27 @@ def Home():
     st.dataframe(df_summary.T.rename_axis("BitQuery Summary"), use_container_width=True)
 
     st.markdown("### Recent Trades (BitQuery)")
-    df_recent_transactions = bitquery.get_recent_pair_tx_df(token, pair_address)
+    df_recent_transactions = bitquery.get_recent_pair_tx_df(token, pair_address, limit=30)
     st.dataframe(df_recent_transactions, use_container_width=True)
 
     st.markdown("### Processed DataFrame")
     
-    # Get transaction_maker_age_days for every transaction_maker
+    # Add transaction_maker_age_days for every transaction_maker
     tm_wallets = df_recent_transactions['bq_transaction_maker'].unique().tolist()
     tm_ages = bitquery.estimate_wallets_age(tm_wallets)
 
-    # Add the wallet age to the Dataframe
+    # Add the wallet age
     df_recent_transactions['bq_transaction_maker_age_days'] = df_recent_transactions['bq_transaction_maker'].map(tm_ages)
-    
+
+    # Add market cap
+    mc_tx = df_recent_transactions['bq_block_time'].unique().tolist()
+    mc_df = bitquery.get_market_cap_df(token, times=mc_tx)
+    df_recent_transactions = df_recent_transactions.merge(
+        mc_df,
+        on="bq_block_time",
+        how="left"
+    )
+
     # Merge the token status df (Since it is 1 row, copy it for each transaction)
     df_status = df_status.merge(df_summary, how="cross")
     df_recent_transactions = df_status.merge(df_recent_transactions, how="cross")

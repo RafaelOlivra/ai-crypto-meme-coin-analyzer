@@ -54,6 +54,20 @@ class Utils:
         return slug.strip("-")
 
     @staticmethod
+    def time_slugify(time) -> str:
+        """
+        Create a URL-friendly slug from a datetime object.
+
+        Args:
+            dt (datetime): The datetime object to slugify.
+
+        Returns:
+            str: The slugified datetime string.
+        """
+        formatted = Utils.formatted_date(time)
+        return "T" + formatted.replace(":", "").replace("-", "").replace("T", "").replace("Z", "").lower()
+
+    @staticmethod
     def is_json(data: str) -> bool:
         """
         Check if a given string is valid JSON.

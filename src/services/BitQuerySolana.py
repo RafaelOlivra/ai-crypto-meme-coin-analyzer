@@ -1,4 +1,5 @@
 import json
+from time import time
 from numpy import record
 import requests
 import pandas as pd
@@ -11,6 +12,8 @@ from lib.Utils import Utils
 from lib.LocalCache import cache_handler
 
 DEFAULT_CACHE_TTL = 5
+DAYS_IN_SECONDS = 24 * 60 * 60
+YEARS_IN_SECONDS = 365 * DAYS_IN_SECONDS
 
 class BitQuerySolana:
     """
@@ -219,7 +222,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    @cache_handler.cache(ttl_s=YEARS_IN_SECONDS)
     def get_mint_address_by_name(self, coin_name: str) -> Optional[str]:
         """
         Get the mint address for a Solana coin based on its name or symbol.
@@ -271,7 +274,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
             return None
 
-    @cache_handler.cache(ttl_s=60 * 60 * 24)
+    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def estimate_wallet_age(self, wallet_address: str) -> Optional[int]:
         """
         Get the wallet age (based on the first transaction) for a Solana wallet.
@@ -282,40 +285,14 @@ class BitQuerySolana:
         Returns:
             Optional[int]: The age of the wallet in days, or None if not found.
         """
-
-        query = """
-        {
-          solana {
-            transfers(receiverAddress: {is: "$walletAddress"}) {
-              minimum(of: time)
-            }
-          }
-        }
-        """
-        
-        query = query.replace("$walletAddress", wallet_address)
-
-        payload = {
-            "query": query,
-        } 
-
-        response_data = self._fetch(
-            url=self.apiv1,
-            method="post",
-            data=json.dumps(payload),
-        )
-
         try:
-            tx = response_data["data"]["solana"]["transfers"][0]
-            block_date = tx["minimum"]
-            age = Utils.get_days_since(block_date, format="%Y-%m-%d %H:%M:%S %Z")
-            return age
-          
+            age = self.estimate_wallets_age([wallet_address])
+            return age.get(wallet_address)
         except (KeyError, TypeError, IndexError) as e:
             _log(f"Error parsing BitQuery response or wallet not found: {e}", level="ERROR")
             return None
           
-    @cache_handler.cache(ttl_s=60 * 60 * 24)
+    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def estimate_wallets_age(self, wallet_addresses: list[str]) -> dict[str, Optional[int]]:
         """
         Get the wallet age (based on the first transaction) for multiple Solana wallets.
@@ -334,7 +311,7 @@ class BitQuerySolana:
         {
           solana {
             transfers(
-              receiverAddress: {in: [$addresses]}
+              receiverAddress: {in: [ADDRESSES]}
             ) {
               minimum(of: time)
               receiver {
@@ -344,7 +321,7 @@ class BitQuerySolana:
           }
         }
         """
-        query = query.replace("$addresses", addresses_str)
+        query = query.replace("ADDRESSES", addresses_str)
 
         payload = {
             "query": query,
@@ -583,7 +560,7 @@ class BitQuerySolana:
           time: Optional[str] = None
         ):
         """
-        Retrieve the GMGN liquidity pool information for a specific market pair.
+        Retrieve the liquidity pool information for a specific market pair.
 
         Args:
             pair_address (str): The mint address of the market pair to query.
@@ -652,6 +629,109 @@ class BitQuerySolana:
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
+          
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def get_market_cap(
+          self,
+          mint_address: str,
+          times: list[str|int],
+        ) -> dict:
+        """
+        Retrieve the market capitalization for a specific token.
+
+        Args:
+            mint_address (str): The mint address of the token to query.
+            times (list[str|int]): A list of timestamps to query for the market cap.
+
+        Returns:
+            dict: The market capitalization information for the specified token.
+        """
+        if type(times) is int:
+            times = [times]
+
+        # Use current time if not provided
+        if not times:
+          times = [Utils.formatted_date()]
+      
+        template = """
+        SLUG: TokenSupplyUpdates(
+          where: {
+            TokenSupplyUpdate: {Currency: {MintAddress: {is: "MINT_ADDRESS"}}},
+            Block: {Time: {till: "TIME"}}
+          }
+          limit: {count: 1}
+          orderBy: {ascending: Block_Time}
+        ) {
+          TokenSupplyUpdate {
+            MarketCap: PostBalanceInUSD
+            Supply: PostBalance
+            Currency {
+              Symbol
+              Name
+            }
+          }
+          Block {
+            Time
+          }
+        }
+        """
+        
+        base_query = ""
+        for time in times:
+            query_part = template.replace("SLUG", Utils.time_slugify(time)).replace("MINT_ADDRESS", mint_address).replace("TIME", Utils.formatted_date(time))
+            base_query += query_part + "\n"
+
+        query = """
+        query {
+            Solana {
+              """ + base_query + """
+            }
+        }
+        """
+
+        payload = {
+          "query": query
+        }
+        
+        response_data = self._fetch(
+            url=self.eap_url, 
+            method="post", 
+            data=json.dumps(payload),
+        )
+        
+        try:
+            mc = {}
+            response = response_data["data"]["Solana"]
+            for t in times:
+                slug = Utils.time_slugify(t)
+                if slug in response and len(response[slug]) > 0:
+                    market_cap = response[slug][0]["TokenSupplyUpdate"]["MarketCap"]
+                    mc[t] = float(market_cap) if market_cap else 0.0
+            return mc
+
+        except (KeyError, TypeError) as e:
+            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
+            return {}
+          
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def get_market_cap_df(
+          self,
+          mint_address: str,
+          times: list[str|int],
+        ) -> pd.DataFrame:
+        """
+        Retrieve the market capitalization for a specific token.
+
+        Args:
+            mint_address (str): The mint address of the token to query.
+            times (list[str|int]): A list of timestamps to query for the market cap.
+
+        Returns:
+            dict: The market capitalization information for the specified token.
+        """
+        mc = self.get_market_cap(mint_address, times)
+        df = pd.DataFrame(list(mc.items()), columns=["bq_block_time", "bq_estimated_market_cap"])
+        return df
 
     @cache_handler.cache(ttl_s=60)
     def get_recent_pair_tx(
@@ -738,6 +818,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
+    @cache_handler.cache(ttl_s=60)
     def get_recent_pair_tx_df(
           self,
           mint_address: str,

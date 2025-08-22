@@ -81,5 +81,49 @@ def test_get_token_summary():
     )
     _log("Status for BILLY:", status)
     assert isinstance(status, dict)
-    assert "no_mint" in status
+    assert "rc_no_mint" in status
     assert "be_freeze_authority" in status
+
+
+## RUG CHECK
+
+def test_rug_check_get_token_info():
+    solana = SolanaTokenSummary()
+    token = "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv" 
+    token_info = solana._rugcheck_get_token_info(token)
+    assert isinstance(token_info, dict)
+    assert "token" in token_info
+    assert "markets" in token_info
+
+def test_rug_check_get_token_risks():
+    solana = SolanaTokenSummary()
+    token = "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
+    risks = solana._rugcheck_get_token_risks(token)
+    _log("Risks:", risks)
+    assert isinstance(risks, list)
+    assert "High" in risks[0]
+
+def test_rug_check_get_market_data():
+    solana = SolanaTokenSummary()
+    mint_address = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump"
+    pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
+    market_data = solana._rugcheck_get_market_data(mint_address, pair_address)
+    assert isinstance(market_data, dict)
+    assert "pubkey" in market_data
+    assert market_data["pubkey"] == pair_address
+    assert "lp" in market_data
+
+def test_rug_check_liquidity_locked():
+    solana = SolanaTokenSummary()
+    mint_address = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump"
+    pair_address = "Fx8KEqbgsipindeuYw8poz8yw77F54sEef2DrBRjKgFB"
+    is_locked = solana._rugcheck_is_liquidity_locked(mint_address, pair_address)
+    _log("Liquidity Locked:", is_locked)
+    assert isinstance(is_locked, bool)
+    assert is_locked == True
+    
+    pair_address = "7CiUuSUH9ajRWLUmTBM7ry5uEVtCHmQxe3hQuSqUpgz1"
+    is_locked = solana._rugcheck_is_liquidity_locked(mint_address, pair_address)
+    _log("Liquidity Locked:", is_locked)
+    assert isinstance(is_locked, bool)
+    assert is_locked == False

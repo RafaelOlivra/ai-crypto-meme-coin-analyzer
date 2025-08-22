@@ -52,7 +52,6 @@ def test_get_recent_token_pair_trades():
     mint_address = "J921djbXknTwmazepWsSbuwqjqqPsXA84FbGwormpump" # BILLY
     pair_address = "4hxRUetaPGfN5KuRXvpmZWdNruXiWHX3XhX3mNwbj2AA" # PUMP.FUN
     trades = bitquery.get_recent_pair_tx(mint_address, pair_address, limit=5)
-    # _log("GMGN recent token trades fetched successfully.", trades)
     _log(trades[0]['Transaction']['FeeInUSD'])
     assert isinstance(trades, list)
     assert len(trades) == 5
@@ -62,7 +61,7 @@ def test_get_liquidity_pool():
     bitquery = BitQuerySolana()
     pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"  # BILLY-GMGN
     liquidity_pool = bitquery.get_liquidity_pool_for_pair(pair_address)
-    _log("GMGN liquidity pool fetched successfully.", liquidity_pool)
+    _log("Liquidity pool fetched successfully.", liquidity_pool)
     assert isinstance(liquidity_pool, dict)
     assert liquidity_pool['Pool']['Market']['MarketAddress'] == pair_address
     assert "Quote" in liquidity_pool['Pool']
@@ -73,7 +72,7 @@ def test_get_wallet_age():
     wallet_age = solana.estimate_wallet_age("2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T")
     assert isinstance(wallet_age, int)
     _log("Wallet age:", wallet_age)
-    assert wallet_age >= 0
+    assert wallet_age >= 5
     
 def test_get_wallet_age_multiple():
     solana = BitQuerySolana()
@@ -83,4 +82,14 @@ def test_get_wallet_age_multiple():
     ])
     assert isinstance(wallet_age, dict)
     _log("Wallet age:", wallet_age)
-    assert all(age >= 0 for age in wallet_age.values())
+    assert all(age >= 5 for age in wallet_age.values())
+
+def test_get_market_cap():
+    solana = BitQuerySolana()
+    mint_address= "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
+    times = ["2025-08-22T22:08:00Z", "2025-08-22T21:00:00Z"]
+    market_cap = solana.get_market_cap(mint_address, times=times)
+    assert isinstance(market_cap, dict)
+    _log("Market caps:", market_cap)
+    _log("Market cap value:", list(market_cap.values())[0])
+    assert all(mc > 0 for mc in market_cap.values())
