@@ -722,9 +722,9 @@ class BitQuerySolana:
 
                     if block_date:
                         age = Utils.get_days_since(block_date, format="%Y-%m-%d %H:%M:%S %Z")
-                        results[wallet_address] = age
+                        results[wallet_address] = age if age else 0
                     else:
-                        results[wallet_address] = None
+                        results[wallet_address] = 0
 
             except (KeyError, TypeError) as e:
                 _log(f"Error parsing BitQuery response: {e}", level="ERROR")

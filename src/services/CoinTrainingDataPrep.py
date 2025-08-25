@@ -125,6 +125,9 @@ class CoinTrainingDataPrep:
             "bq_transaction_feepayer",
         ]
         df_merged = df_merged.drop(columns=cols_to_remove, errors='ignore')
+        
+        # Standardize token symbol
+        df_merged["context_token_symbol"] = df_merged["bq_trade_currency_symbol"]
 
         # -- Store Data
         if save:

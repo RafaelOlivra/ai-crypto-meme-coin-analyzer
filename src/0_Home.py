@@ -27,7 +27,7 @@ def Home():
     # Set page title
     st.set_page_config(page_title="Home", page_icon="🐸", layout="wide")
     
-    st.title("🐸 Meme Coin Analyzer")
+    st.title("🐸 Meme Coin Analyzer Concept")
     
     col1, col2 = st.columns([8, 2])
     

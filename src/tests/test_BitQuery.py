@@ -41,10 +41,11 @@ def test_get_token_pair_summary():
     pair_address = "4hxRUetaPGfN5KuRXvpmZWdNruXiWHX3XhX3mNwbj2AA" # PUMP.FUN
     time = "2025-08-14T15:30:39Z"
     summary = bitquery.get_token_pair_24h_summary(mint_address, pair_address, time=time)
+    _log("Token pair summary fetched successfully.", summary)
     assert isinstance(summary, dict)
     assert summary['Trade']['Currency']['MintAddress'] == mint_address
     assert summary['Trade']['Market']['MarketAddress'] == pair_address
-    assert "sell_volume" in summary
+    assert "sell_volume_24h" in summary
     assert "sell_volume_5min" in summary
     
 def test_get_recent_pair_trades():
