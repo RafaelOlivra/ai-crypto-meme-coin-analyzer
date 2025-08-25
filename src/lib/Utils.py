@@ -5,7 +5,7 @@ import json
 from datetime import datetime, date, timedelta
 
 from services.AppData import AppData
-from services.log.Logger import _log
+from services.logger.Logger import _log
 
 DATETIME_DISPLAY_FORMAT = AppData().get_config("datetime_display_format")
 TIME_DISPLAY_FORMAT = AppData().get_config("time_display_format")

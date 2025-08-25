@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from typing import List
 
 from services.AppData import AppData
-from services.log.Logger import _log
+from services.logger.Logger import _log
 
 from lib.Utils import Utils
 

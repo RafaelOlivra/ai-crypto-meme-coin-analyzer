@@ -4,7 +4,7 @@ import time
 from typing import Any, Union
 
 from lib.LocalCache import cache_handler
-from services.log.Logger import _log
+from services.logger.Logger import _log
 
 DEFAULT_CACHE_TTL = 60
 
@@ -78,8 +78,7 @@ class AppData:
             "fastapi": "FASTAPI_KEYS",
             "huggingface": "HUGGINGFACE_API_KEY",
             "googlegemini": "GEMINY_API_KEY",
-            "openai": "OPENAI_API_KEY",
-            "coinbase": "COINBASE_API_KEY"
+            "openai": "OPENAI_API_KEY"
         }
         
         # If the key is not found we can try a fallback by looking for an

@@ -2,7 +2,7 @@ import pytest
 import time
 
 from services.CoinGecko import CoinGecko
-from services.log.Logger import _log
+from services.logger.Logger import _log
 
 def test_get_coin_market_data():
     coingecko = CoinGecko()

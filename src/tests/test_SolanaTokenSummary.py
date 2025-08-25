@@ -1,5 +1,5 @@
 import datetime
-from services.log.Logger import _log
+from services.logger.Logger import _log
 import pytest
 import time
 

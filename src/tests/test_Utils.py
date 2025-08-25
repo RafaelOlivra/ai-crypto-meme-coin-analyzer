@@ -3,7 +3,7 @@ import pytest
 import time
 
 from lib.Utils import Utils
-from services.log.Logger import _log
+from services.logger.Logger import _log
 
 def test_formatted_date():
     # Test with a timestamp

@@ -3,7 +3,7 @@ import pytest
 import time
 
 from services.BitQuerySolana import BitQuerySolana
-from services.log.Logger import _log
+from services.logger.Logger import _log
 
 def test_get_access_token():
     bitquery = BitQuerySolana()

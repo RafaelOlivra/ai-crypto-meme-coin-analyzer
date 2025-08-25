@@ -2,7 +2,7 @@ import requests
 
 from typing import Any, Union, Optional, Dict, List
 
-from services.log.Logger import _log
+from services.logger.Logger import _log
 from services.AppData import AppData
 from lib.LocalCache import cache_handler
 

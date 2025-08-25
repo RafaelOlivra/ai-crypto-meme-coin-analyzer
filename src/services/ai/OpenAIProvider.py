@@ -3,7 +3,7 @@ import openai
 
 from services.ai.AiProvider import AiProvider
 from services.AppData import AppData
-from services.log.Logger import _log
+from services.logger.Logger import _log
 
 
 class OpenAIProvider(AiProvider):

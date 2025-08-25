@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, List
 from services.AppData import AppData
 from lib.LocalCache import cache_handler
 from lib.Utils import Utils
-from services.log.Logger import _log
+from services.logger.Logger import _log
 
 DEFAULT_CACHE_TTL = 300
 MINUTE_IN_SECONDS = 60
