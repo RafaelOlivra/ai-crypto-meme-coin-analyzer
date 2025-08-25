@@ -13,6 +13,7 @@ Caddyfile
 .run.powershell
 /data/.storage/
 /data/.log/
+/data/.permanent/
 *.storage
 /app/__app__.py
 *.dat

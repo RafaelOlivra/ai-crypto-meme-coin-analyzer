@@ -1,6 +1,7 @@
 {
     "assets_dir": "./data/assets/",
-    "temp_storage_dir": "./data/.storage",
+    "temp_storage_dir": "./data/.temp",
+    "permanent_storage_dir": "./data/.permanent",
     "log_dir": "./data/.log",
     "datetime_display_format": "%d/%m/%Y",
     "time_display_format": "%H:%M",

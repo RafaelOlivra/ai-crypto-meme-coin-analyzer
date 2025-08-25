@@ -2,9 +2,9 @@ from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassifica
 import torch
 import time
 
-from services.AiProvider import AiProvider
+from services.ai.AiProvider import AiProvider
 from services.AppData import AppData
-from services.Logger import _log
+from services.log.Logger import _log
 
 
 class SentimentAnalyzer(AiProvider):
@@ -107,5 +107,4 @@ class SentimentAnalyzer(AiProvider):
         return response.split("\n")[0].strip().upper()
 
     def _clean_response(self, response: str) -> str:
-        # No cleaning needed for sentiment analysis, but maintaining the method for structure
         return response.strip()

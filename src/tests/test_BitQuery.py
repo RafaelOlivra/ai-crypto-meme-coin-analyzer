@@ -37,10 +37,10 @@ def test_get_recent_coin_trades_for_all_pools():
     
 def test_get_token_pair_summary():
     bitquery = BitQuerySolana()
-    mint_address = "J921djbXknTwmazepWsSbuwqjqqPsXA84FbGwormpump" # BILLY
+    mint_address = "J921djbXknTwmazepWsSbuwqjqqPsXA84FbGwormpump" # ELONGATE
     pair_address = "4hxRUetaPGfN5KuRXvpmZWdNruXiWHX3XhX3mNwbj2AA" # PUMP.FUN
     time = "2025-08-14T15:30:39Z"
-    summary = bitquery.get_token_pair_summary(mint_address, pair_address, time=time)
+    summary = bitquery.get_token_pair_24h_summary(mint_address, pair_address, time=time)
     assert isinstance(summary, dict)
     assert summary['Trade']['Currency']['MintAddress'] == mint_address
     assert summary['Trade']['Market']['MarketAddress'] == pair_address
@@ -49,7 +49,7 @@ def test_get_token_pair_summary():
     
 def test_get_recent_token_pair_trades():
     bitquery = BitQuerySolana()
-    mint_address = "J921djbXknTwmazepWsSbuwqjqqPsXA84FbGwormpump" # BILLY
+    mint_address = "J921djbXknTwmazepWsSbuwqjqqPsXA84FbGwormpump" # ELONGATE
     pair_address = "4hxRUetaPGfN5KuRXvpmZWdNruXiWHX3XhX3mNwbj2AA" # PUMP.FUN
     trades = bitquery.get_recent_pair_tx(mint_address, pair_address, limit=5)
     _log(trades[0]['Transaction']['FeeInUSD'])
@@ -59,7 +59,7 @@ def test_get_recent_token_pair_trades():
     
 def test_get_liquidity_pool():
     bitquery = BitQuerySolana()
-    pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"  # BILLY-GMGN
+    pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"  # BILLY
     liquidity_pool = bitquery.get_liquidity_pool_for_pair(pair_address)
     _log("Liquidity pool fetched successfully.", liquidity_pool)
     assert isinstance(liquidity_pool, dict)

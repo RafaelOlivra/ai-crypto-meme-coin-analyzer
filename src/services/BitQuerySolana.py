@@ -19,7 +19,7 @@ class BitQuerySolana:
     """
     A base class for handling Solana coin-related operations via BitQuery.
     """
-
+    
     def __init__(self, api_key=None):
         self.client_id = api_key or AppData().get_api_key("bitquery_client_id")
         self.client_secret = api_key or AppData().get_api_key("bitquery_client_secret")
@@ -29,7 +29,65 @@ class BitQuerySolana:
         self.eap_url = "https://streaming.bitquery.io/eap"
         self.session = requests.Session()
         self.IS_QUERYING = False
+        
+    # --------------------------
+    # Api
+    # --------------------------
+    
+    # Coin Info
+    
+    @cache_handler.cache(ttl_s=YEARS_IN_SECONDS)
+    def get_mint_address_by_name(self, coin_name: str) -> Optional[str]:
+        """
+        Get the mint address for a Solana coin based on its name or symbol.
+        """
+        query = """
+        query ($coinName: String!) {
+          Solana {
+            DEXTrades(
+              orderBy: { descending: Block_Time }
+              limit: { count: 1 }
+              limitBy: { by: Trade_Buy_Currency_MintAddress, count: 1 }
+              where: { Trade: { Buy: { Currency: { Name: { is: $coinName } } } } }
+            ) {
+              Trade {
+                Buy {
+                  Currency {
+                    Name
+                    Symbol
+                    MintAddress
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        
+        variables = {
+            "coinName": coin_name,
+        }
 
+        payload = {
+            "query": query,
+            "variables": variables
+        }
+        
+        response_data = self._fetch(
+            url=self.eap_url,
+            method="post",
+            data=json.dumps(payload),
+        )
+
+        try:
+            # The query returns a list of DEXTrades, so we access the first one
+            # and then get the MintAddress from the Trade.
+            mint_address = response_data["data"]["Solana"]["DEXTrades"][0]["Trade"]["Buy"]["Currency"]["MintAddress"]
+            return mint_address
+        except (KeyError, TypeError, IndexError) as e:
+            _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
+            return None
+    
     @cache_handler.cache(ttl_s=1)
     def get_latest_tokens(
           self,
@@ -59,7 +117,7 @@ class BitQuerySolana:
         platform_address = platform_map.get(platform, platform)
 
         query = """
-        query Q(
+        query (
           $platformAddress: String!,
           $minLiquidity: String!,
           $maxLiquidity: String!,
@@ -138,11 +196,13 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
 
+    # Token Trades
+    
     @cache_handler.cache(ttl_s=1)
     def get_recent_coin_tx_for_all_pools(
         self,
         mint_address: str,
-        limit: int = 10
+        limit: int = 1000000000
       ) -> List[Dict]:
         """
         Get the most recent transactions for a Solana coin.
@@ -176,15 +236,15 @@ class BitQuerySolana:
                 Currency {
                   Symbol
                 }
+                Market {
+                  MarketAddress
+                }
                 Side {
                   Amount
                   Currency {
                     Symbol
                   }
                   Type
-                }
-                Market {
-                  MarketAddress
                 }
               }
               Block {
@@ -221,59 +281,376 @@ class BitQuerySolana:
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
-
-    @cache_handler.cache(ttl_s=YEARS_IN_SECONDS)
-    def get_mint_address_by_name(self, coin_name: str) -> Optional[str]:
+   
+    @cache_handler.cache(ttl_s=60)
+    def get_recent_pair_tx(
+          self,
+          mint_address: str,
+          pair_address: str,
+          limit: int = 1000000000
+        ):
         """
-        Get the mint address for a Solana coin based on its name or symbol.
+        Get recent trades for the token.
+
+        Args:
+            mint_address (str): Mint address of the token to analyze (base token).
+            pair_address (str): Mint address of the specific market pair/liquidity pool.
+
+        Returns:
+            dict: A dictionary containing the token's summary statistics, such as price,
+                  volume, liquidity, and other market indicators.
         """
         query = """
-        query ($coinName: String!) {
+        query ($mintAddress: String!, $pairAddress: String!, $limit: Int!) {
           Solana {
-            DEXTrades(
-              orderBy: { descending: Block_Time }
-              limit: { count: 1 }
-              limitBy: { by: Trade_Buy_Currency_MintAddress, count: 1 }
-              where: { Trade: { Buy: { Currency: { Name: { is: $coinName } } } } }
+              DEXTradeByTokens(
+                  where: {
+                      Trade: {
+                          Market: { MarketAddress: { is: $pairAddress } }
+                          Currency: { MintAddress: { is: $mintAddress } }
+                          Dex: { ProgramAddress: {} }
+                      }
+                      Transaction: { Result: { Success: true } }
+                  },
+                  limit: { count: $limit }
+              ) {
+                  Block {
+                      Time
+                      Hash
+                  }
+                  Trade {
+                      Market {
+                        MarketAddress
+                      }
+                      Currency {
+                          Symbol
+                      }
+                      Amount
+                      PriceAgainstSideCurrency: Price
+                      PriceInUSD
+                      Side {
+                          Currency {
+                              Symbol
+                          }
+                          Amount
+                          Type
+                      }
+                  }
+                  Transaction {
+                      Maker: Signer
+                      Fee
+                      FeeInUSD
+                      FeePayer
+                  }
+              }
+          }
+        }
+        """
+        
+        variables = {
+          "mintAddress": mint_address,
+          "pairAddress": pair_address,
+          "limit": limit
+        }
+
+        payload = {
+          "query": query,
+          "variables": variables
+        }
+        
+        response_data = self._fetch(
+            url=self.eap_url, 
+            method="post", 
+            data=json.dumps(payload),
+        )
+        
+        try:
+            return response_data["data"]["Solana"]["DEXTradeByTokens"]
+        except (KeyError, TypeError) as e:
+            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
+            return []
+    
+    @cache_handler.cache(ttl_s=60)
+    def get_recent_pair_tx_df(
+          self,
+          mint_address: str,
+          pair_address: str,
+          limit: int = 3000 # Max allowed is 1000000000
+        ) -> pd.DataFrame:
+        """
+        Get recent trades for the token as a DataFrame.
+        
+        Args:
+            mint_address (str): Mint address of the token to analyze (base token).
+            pair_address (str): Mint address of the specific market pair/liquidity pool.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the token's recent trade data.
+        """
+        trades = self.get_recent_pair_tx(
+            mint_address=mint_address,
+            pair_address=pair_address,
+            limit=limit
+        )
+
+        def flatten_trade_record(record):
+            flat = {}
+
+            # Block info
+            block = record.get("Block", {})
+            for k, v in block.items():
+                flat[f"block_{k}"] = v
+
+            # Trade info
+            trade = record.get("Trade", {})
+            for k, v in trade.items():
+                if isinstance(v, dict):
+                    for sub_k, sub_v in v.items():
+                        # Side.Currency nested dict
+                        if sub_k == "Side" and isinstance(sub_v, dict):
+                            side = sub_v
+                            for side_k, side_v in side.items():
+                                if isinstance(side_v, dict):
+                                    for subsub_k, subsub_v in side_v.items():
+                                        flat[f"trade_side_{subsub_k}"] = subsub_v
+                                else:
+                                    flat[f"trade_side_{side_k}"] = side_v
+                        elif isinstance(sub_v, dict):
+                            for subsub_k, subsub_v in sub_v.items():
+                                flat[f"trade_{k}_{subsub_k}"] = subsub_v
+                        else:
+                            flat[f"trade_{k}_{sub_k}"] = sub_v
+                else:
+                    flat[f"trade_{k}"] = v
+
+            # Transaction info
+            transaction = record.get("Transaction", {})
+            for k, v in transaction.items():
+                flat[f"transaction_{k}"] = v
+
+            # Lowercase all column names
+            flat = {k.lower(): v for k, v in flat.items()}
+
+            return flat
+
+        # Flatten all records and create DataFrame
+        df = pd.DataFrame([flatten_trade_record(r) for r in trades])
+
+        # Convert numeric columns from strings to float where possible
+        for col in df.columns:
+            try:
+                df[col] = df[col].astype(float)
+            except (ValueError, TypeError):
+                pass
+
+        # Add bq_ prefix to all columns
+        df = df.rename(columns=lambda x: f"bq_{x}" if not x.startswith("bq_") else x)
+
+        return df
+
+    # Summary
+
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def get_token_pair_24h_summary(
+          self,
+          mint_address: str,
+          pair_address: str,
+          time: int = 0
+        ) -> Optional[Dict]:
+        """
+        Retrieve a 24-hour trading summary for a specific token in a given market.
+
+        In the context of (a Solana-based token analytics/trading platform):
+        - `mint_address` is the **mint address** of the token you want to analyze (the "base token").
+        - `pair_address` is the **mint address of the liquidity pool or market pair**
+          in which the token is traded.
+
+        Args:
+            mint_address (str): Mint address of the token to analyze (base token).
+            pair_address (str): Mint address of the specific market pair/liquidity pool.
+            time (int): The specific time to base the query on (default: 0 = Current time).
+
+        Returns:
+            dict: A dictionary containing the token's summary statistics, such as price,
+                  volume, liquidity, and other market indicators.
+        """
+        query = """
+        query ($mintAddress: String!, $pairAddress: String!, $time5minAgo: DateTime!, $time24hAgo: DateTime!) {
+          Solana(dataset: realtime) {
+            DEXTradeByTokens(
+              where: {
+                Transaction: {
+                  Result: { Success: true }
+                },
+                Trade: {
+                  Currency: { MintAddress: { is: $mintAddress } },
+                  Market: { MarketAddress: { is: $pairAddress } }
+                },
+                Block: { Time: { since: $time24hAgo } }
+              }
             ) {
               Trade {
-                Buy {
+                Currency {
+                  MintAddress
+                  Symbol
+                  UpdateAuthority
+                  IsMutable
+                  Fungible
+                  Wrapped
+                }
+                start: PriceInUSD(minimum: Block_Time)
+                min5: PriceInUSD(
+                  minimum: Block_Time
+                  if: {Block: {Time: {after: $time5minAgo}}}
+                )
+                end: PriceInUSD(maximum: Block_Time)
+                Dex {
+                  ProtocolName
+                  ProtocolFamily
+                  ProgramAddress
+                }
+                Market {
+                  MarketAddress
+                }
+                Side {
                   Currency {
-                    Name
                     Symbol
                     MintAddress
                   }
                 }
               }
+              makers_24h: count(distinct: Transaction_Signer)
+              makers_5min: count(
+                distinct: Transaction_Signer
+                if: {Block: {Time: {after: $time5minAgo}}}
+              )
+              buyers_24h: count(
+                distinct: Transaction_Signer
+                if: {Trade: {Side: {Type: {is: buy}}}}
+              )
+              buyers_5min: count(
+                distinct: Transaction_Signer
+                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time5minAgo}}}
+              )
+              sellers_24h: count(
+                distinct: Transaction_Signer
+                if: {Trade: {Side: {Type: {is: sell}}}}
+              )
+              sellers_5min: count(
+                distinct: Transaction_Signer
+                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time5minAgo}}}
+              )
+              trades_24h: count
+              trades_5min: count(if: {Block: {Time: {after: $time5minAgo}}})
+              traded_volume_24h: sum(of: Trade_Side_AmountInUSD)
+              traded_volume_5min: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Block: {Time: {after: $time5minAgo}}}
+              )
+              buy_volume_24h: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Trade: {Side: {Type: {is: buy}}}}
+              )
+              buy_volume_5min: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time5minAgo}}}
+              )
+              sell_volume_24h: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Trade: {Side: {Type: {is: sell}}}}
+              )
+              sell_volume_5min: sum(
+                of: Trade_Side_AmountInUSD
+                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time5minAgo}}}
+              )
+              buys_24h: count(if: {Trade: {Side: {Type: {is: buy}}}})
+              buys_5min: count(
+                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time5minAgo}}}
+              )
+              sells_24h: count(if: {Trade: {Side: {Type: {is: sell}}}})
+              sells_5min: count(
+                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time5minAgo}}}
+              )
             }
           }
         }
         """
         
         variables = {
-            "coinName": coin_name,
+          "mintAddress": mint_address,
+          "pairAddress": pair_address,
+          "time5minAgo": Utils.formatted_date(time, delta_seconds=-300),
+          "time24hAgo": Utils.formatted_date(time, delta_seconds=-86400)
         }
 
         payload = {
-            "query": query,
-            "variables": variables
+          "query": query,
+          "variables": variables
         }
         
         response_data = self._fetch(
-            url=self.eap_url,
-            method="post",
+            url=self.eap_url, 
+            method="post", 
             data=json.dumps(payload),
         )
-
+        
         try:
-            # The query returns a list of DEXTrades, so we access the first one
-            # and then get the MintAddress from the Trade.
-            mint_address = response_data["data"]["Solana"]["DEXTrades"][0]["Trade"]["Buy"]["Currency"]["MintAddress"]
-            return mint_address
-        except (KeyError, TypeError, IndexError) as e:
-            _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
+            response_data = response_data["data"]["Solana"]["DEXTradeByTokens"]
+            return len(response_data) > 0 and response_data[0] or None
+        except (KeyError, TypeError) as e:
+            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return None
 
+    def get_token_pair_24h_summary_df(
+          self,
+          mint_address: str,
+          pair_address: str,
+          time: int = 0
+        ) -> pd.DataFrame:
+        """
+        Get a summary DataFrame for the token.
+
+        Args:
+            mint_address (str): Mint address of the token to analyze (base token).
+            pair_address (str): Mint address of the specific market pair/liquidity pool.
+            time (int): The specific time to base the query on (default: 0 = Current time).
+
+        Returns:
+            pd.DataFrame: A DataFrame containing the token's summary statistics.
+        """
+        summary = self.get_token_pair_24h_summary(mint_address, pair_address, time)
+        if not summary:
+            return pd.DataFrame()
+
+        # Flatten the Trade section
+        flat = {}
+        trade = summary.get("Trade", {})
+        for key, val in trade.items():
+            if isinstance(val, dict):
+                # Nested dict: flatten further
+                for sub_key, sub_val in val.items():
+                    flat[f"trade_{key}_{sub_key}"] = sub_val
+            else:
+                flat[f"trade_{key}"] = val
+        
+        # Add top-level fields (like buy_volume, sellers, etc.)
+        for key, val in summary.items():
+            if key != "Trade":
+                flat[key] = val
+        
+        # Lowercase all columns
+        flat = {k.lower(): v for k, v in flat.items()}
+          
+        # Adapt to a pandas Dataframe
+        df = pd.DataFrame([flat])
+        
+        # Add bq_ prefix to all columns
+        df = df.rename(columns=lambda x: f"bq_{x}" if not x.startswith("bq_") else x)
+        
+        return df
+    
+    # Wallet Info
+           
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def estimate_wallet_age(self, wallet_address: str) -> Optional[int]:
         """
@@ -354,204 +731,7 @@ class BitQuerySolana:
 
         return results
     
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def get_token_pair_summary(
-          self,
-          mint_address: str,
-          pair_address: str,
-          time: int = 0
-        ) -> Optional[Dict]:
-        """
-        Retrieve a trading summary for a specific GMGN token in a given market.
-
-        In the context of GMGN (a Solana-based token analytics/trading platform):
-        - `mint_address` is the **mint address** of the token you want to analyze (the "base token").
-        - `pair_address` is the **mint address of the liquidity pool or market pair**
-          in which the token is traded.
-
-        Args:
-            mint_address (str): Mint address of the GMGN token to analyze (base token).
-            pair_address (str): Mint address of the specific market pair/liquidity pool.
-            time (int): The specific time to base the query on (default: 0 = Current time).
-
-        Returns:
-            dict: A dictionary containing the token's summary statistics, such as price,
-                  volume, liquidity, and other market indicators.
-        """
-        query = """
-        query Q($mintAddress: String!, $pairAddress: String!, $time5minAgo: DateTime!, $time1hAgo: DateTime!) {
-          Solana(dataset: realtime) {
-            DEXTradeByTokens(
-              where: {
-                Transaction: {
-                  Result: { Success: true }
-                },
-                Trade: {
-                  Currency: { MintAddress: { is: $mintAddress } },
-                  Market: { MarketAddress: { is: $pairAddress } }
-                },
-                Block: { Time: { since: $time1hAgo } }
-              }
-            ) {
-              Trade {
-                Currency {
-                  MintAddress
-                  Symbol
-                  UpdateAuthority
-                  IsMutable
-                  Fungible
-                  Wrapped
-                }
-                start: PriceInUSD(minimum: Block_Time)
-                min5: PriceInUSD(
-                  minimum: Block_Time
-                  if: {Block: {Time: {after: $time5minAgo}}}
-                )
-                end: PriceInUSD(maximum: Block_Time)
-                Dex {
-                  ProtocolName
-                  ProtocolFamily
-                  ProgramAddress
-                }
-                Market {
-                  MarketAddress
-                }
-                Side {
-                  Currency {
-                    Symbol
-                    MintAddress
-                  }
-                }
-              }
-              makers: count(distinct: Transaction_Signer)
-              makers_5min: count(
-                distinct: Transaction_Signer
-                if: {Block: {Time: {after: $time5minAgo}}}
-              )
-              buyers: count(
-                distinct: Transaction_Signer
-                if: {Trade: {Side: {Type: {is: buy}}}}
-              )
-              buyers_5min: count(
-                distinct: Transaction_Signer
-                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time5minAgo}}}
-              )
-              sellers: count(
-                distinct: Transaction_Signer
-                if: {Trade: {Side: {Type: {is: sell}}}}
-              )
-              sellers_5min: count(
-                distinct: Transaction_Signer
-                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time5minAgo}}}
-              )
-              trades: count
-              trades_5min: count(if: {Block: {Time: {after: $time5minAgo}}})
-              traded_volume: sum(of: Trade_Side_AmountInUSD)
-              traded_volume_5min: sum(
-                of: Trade_Side_AmountInUSD
-                if: {Block: {Time: {after: $time5minAgo}}}
-              )
-              buy_volume: sum(
-                of: Trade_Side_AmountInUSD
-                if: {Trade: {Side: {Type: {is: buy}}}}
-              )
-              buy_volume_5min: sum(
-                of: Trade_Side_AmountInUSD
-                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time5minAgo}}}
-              )
-              sell_volume: sum(
-                of: Trade_Side_AmountInUSD
-                if: {Trade: {Side: {Type: {is: sell}}}}
-              )
-              sell_volume_5min: sum(
-                of: Trade_Side_AmountInUSD
-                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time5minAgo}}}
-              )
-              buys: count(if: {Trade: {Side: {Type: {is: buy}}}})
-              buys_5min: count(
-                if: {Trade: {Side: {Type: {is: buy}}}, Block: {Time: {after: $time5minAgo}}}
-              )
-              sells: count(if: {Trade: {Side: {Type: {is: sell}}}})
-              sells_5min: count(
-                if: {Trade: {Side: {Type: {is: sell}}}, Block: {Time: {after: $time5minAgo}}}
-              )
-            }
-          }
-        }
-        """
-        
-        variables = {
-          "mintAddress": mint_address,
-          "pairAddress": pair_address,
-          "time5minAgo": Utils.formatted_date(time, delta_seconds=-300),
-          "time1hAgo": Utils.formatted_date(time, delta_seconds=-3600)
-        }
-
-        payload = {
-          "query": query,
-          "variables": variables
-        }
-        
-        response_data = self._fetch(
-            url=self.eap_url, 
-            method="post", 
-            data=json.dumps(payload),
-        )
-        
-        try:
-            response_data = response_data["data"]["Solana"]["DEXTradeByTokens"]
-            return len(response_data) > 0 and response_data[0] or None
-        except (KeyError, TypeError) as e:
-            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
-            return None
-
-    def get_token_pair_summary_df(
-          self,
-          mint_address: str,
-          pair_address: str,
-          time: int = 0
-        ) -> pd.DataFrame:
-        """
-        Get a summary DataFrame for the GMGN token.
-
-        Args:
-            mint_address (str): Mint address of the GMGN token to analyze (base token).
-            pair_address (str): Mint address of the specific market pair/liquidity pool.
-            time (int): The specific time to base the query on (default: 0 = Current time).
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the token's summary statistics.
-        """
-        summary = self.get_token_pair_summary(mint_address, pair_address, time)
-        if not summary:
-            return pd.DataFrame()
-
-        # Flatten the Trade section
-        flat = {}
-        trade = summary.get("Trade", {})
-        for key, val in trade.items():
-            if isinstance(val, dict):
-                # Nested dict: flatten further
-                for sub_key, sub_val in val.items():
-                    flat[f"trade_{key}_{sub_key}"] = sub_val
-            else:
-                flat[f"trade_{key}"] = val
-        
-        # Add top-level fields (like buy_volume, sellers, etc.)
-        for key, val in summary.items():
-            if key != "Trade":
-                flat[key] = val
-        
-        # Lowercase all columns
-        flat = {k.lower(): v for k, v in flat.items()}
-          
-        # Adapt to a pandas Dataframe
-        df = pd.DataFrame([flat])
-        
-        # Add bq_ prefix to all columns
-        df = df.rename(columns=lambda x: f"bq_{x}" if not x.startswith("bq_") else x)
-        
-        return df
+    # Liquidity
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_liquidity_pool_for_pair(
@@ -575,7 +755,7 @@ class BitQuerySolana:
           time = Utils.formatted_date()
           
         query = """
-          query Q($time: DateTime!, $pairAddress: String!) {
+        query ($time: DateTime!, $pairAddress: String!) {
             Solana {
                 DEXPools(
                     where: {
@@ -629,7 +809,9 @@ class BitQuerySolana:
         except (KeyError, TypeError) as e:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
-          
+    
+    # Market Cap
+         
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_market_cap(
           self,
@@ -733,169 +915,7 @@ class BitQuerySolana:
         df = pd.DataFrame(list(mc.items()), columns=["bq_block_time", "bq_estimated_market_cap"])
         return df
 
-    @cache_handler.cache(ttl_s=60)
-    def get_recent_pair_tx(
-          self,
-          mint_address: str,
-          pair_address: str,
-          limit: int = 100
-        ):
-        """
-        Get recent trades for the token.
-
-        Args:
-            mint_address (str): Mint address of the token to analyze (base token).
-            pair_address (str): Mint address of the specific market pair/liquidity pool.
-
-        Returns:
-            dict: A dictionary containing the token's summary statistics, such as price,
-                  volume, liquidity, and other market indicators.
-        """
-        query = """
-        query Q($mintAddress: String!, $pairAddress: String!, $limit: Int!) {
-          Solana {
-              DEXTradeByTokens(
-                  where: {
-                      Trade: {
-                          Market: { MarketAddress: { is: $pairAddress } }
-                          Currency: { MintAddress: { is: $mintAddress } }
-                          Dex: { ProgramAddress: {} }
-                      }
-                      Transaction: { Result: { Success: true } }
-                  },
-                  limit: { count: $limit }
-              ) {
-                  Block {
-                      Time
-                      Hash
-                  }
-                  Trade {
-                      Currency {
-                          Symbol
-                      }
-                      Amount
-                      PriceAgainstSideCurrency: Price
-                      PriceInUSD
-                      Side {
-                          Currency {
-                              Symbol
-                          }
-                          Amount
-                          Type
-                      }
-                  }
-                  Transaction {
-                      Maker: Signer
-                      Fee
-                      FeeInUSD
-                      FeePayer
-                  }
-              }
-          }
-        }
-        """
-        
-        variables = {
-          "mintAddress": mint_address,
-          "pairAddress": pair_address,
-          "limit": limit
-        }
-
-        payload = {
-          "query": query,
-          "variables": variables
-        }
-        
-        response_data = self._fetch(
-            url=self.eap_url, 
-            method="post", 
-            data=json.dumps(payload),
-        )
-        
-        try:
-            return response_data["data"]["Solana"]["DEXTradeByTokens"]
-        except (KeyError, TypeError) as e:
-            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
-            return []
-
-    @cache_handler.cache(ttl_s=60)
-    def get_recent_pair_tx_df(
-          self,
-          mint_address: str,
-          pair_address: str,
-          limit: int = 100
-        ) -> pd.DataFrame:
-        """
-        Get recent trades for the token as a DataFrame.
-        
-        Args:
-            mint_address (str): Mint address of the token to analyze (base token).
-            pair_address (str): Mint address of the specific market pair/liquidity pool.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the token's recent trade data.
-        """
-        trades = self.get_recent_pair_tx(
-            mint_address=mint_address,
-            pair_address=pair_address,
-            limit=limit
-        )
-
-        def flatten_trade_record(record):
-            flat = {}
-
-            # Block info
-            block = record.get("Block", {})
-            for k, v in block.items():
-                flat[f"block_{k}"] = v
-
-            # Trade info
-            trade = record.get("Trade", {})
-            for k, v in trade.items():
-                if isinstance(v, dict):
-                    for sub_k, sub_v in v.items():
-                        # Side.Currency nested dict
-                        if sub_k == "Side" and isinstance(sub_v, dict):
-                            side = sub_v
-                            for side_k, side_v in side.items():
-                                if isinstance(side_v, dict):
-                                    for subsub_k, subsub_v in side_v.items():
-                                        flat[f"trade_side_{subsub_k}"] = subsub_v
-                                else:
-                                    flat[f"trade_side_{side_k}"] = side_v
-                        elif isinstance(sub_v, dict):
-                            for subsub_k, subsub_v in sub_v.items():
-                                flat[f"trade_{k}_{subsub_k}"] = subsub_v
-                        else:
-                            flat[f"trade_{k}_{sub_k}"] = sub_v
-                else:
-                    flat[f"trade_{k}"] = v
-
-            # Transaction info
-            transaction = record.get("Transaction", {})
-            for k, v in transaction.items():
-                flat[f"transaction_{k}"] = v
-
-            # Lowercase all column names
-            flat = {k.lower(): v for k, v in flat.items()}
-
-            return flat
-
-        # Flatten all records and create DataFrame
-        df = pd.DataFrame([flatten_trade_record(r) for r in trades])
-
-        # Convert numeric columns from strings to float where possible
-        for col in df.columns:
-            try:
-                df[col] = df[col].astype(float)
-            except (ValueError, TypeError):
-                pass
-
-        # Add bq_ prefix to all columns
-        df = df.rename(columns=lambda x: f"bq_{x}" if not x.startswith("bq_") else x)
-
-        return df
-
+    
     # --------------------------
     # Utils
     # --------------------------

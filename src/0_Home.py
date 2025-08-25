@@ -6,6 +6,7 @@ from dotenv import load_dotenv, find_dotenv
 from services.AppData import AppData
 from services.BitQuerySolana import BitQuerySolana
 from services.SolanaTokenSummary import SolanaTokenSummary
+from services.CoinTrainingDataParser import CoinTrainingDataParser
 from services.CoinGecko import CoinGecko
 
 # --------------------------
@@ -106,44 +107,25 @@ def Home():
     pair_address = addresses[current_latest_token]["pair"]
 
     st.markdown("### Token Summary (BirdEye + Dexscreener)")
-    df_status = solana.get_token_summary_df(token, pair_address)
+    df_sol_status = solana.get_token_summary_df(token, pair_address)
 
     # Convert any json cells to string
-    df_status = df_status.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
+    df_sol_status = df_sol_status.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
 
-    st.dataframe(df_status.T.rename_axis("Agg Token Summary"), use_container_width=True)
+    st.dataframe(df_sol_status.T.rename_axis("Agg Token Summary"), use_container_width=True)
 
     st.markdown("### Token Summary (BitQuery)")
-    df_summary = bitquery.get_token_pair_summary_df(token, pair_address)
-    st.dataframe(df_summary.T.rename_axis("BitQuery Summary"), use_container_width=True)
+    df_bitquery_summary = bitquery.get_token_pair_24h_summary_df(token, pair_address)
+    st.dataframe(df_bitquery_summary.T.rename_axis("BitQuery Summary"), use_container_width=True)
 
     st.markdown("### Recent Trades (BitQuery)")
-    df_recent_transactions = bitquery.get_recent_pair_tx_df(token, pair_address, limit=30)
-    st.dataframe(df_recent_transactions, use_container_width=True)
+    df_bitquery_recent_transactions = bitquery.get_recent_pair_tx_df(token, pair_address)
+    st.dataframe(df_bitquery_recent_transactions, use_container_width=True)
 
-    st.markdown("### Processed DataFrame")
-    
-    # Add transaction_maker_age_days for every transaction_maker
-    tm_wallets = df_recent_transactions['bq_transaction_maker'].unique().tolist()
-    tm_ages = bitquery.estimate_wallets_age(tm_wallets)
+    st.markdown("### Raw Training DataFrame")
 
-    # Add the wallet age
-    df_recent_transactions['bq_transaction_maker_age_days'] = df_recent_transactions['bq_transaction_maker'].map(tm_ages)
-
-    # Add market cap
-    mc_tx = df_recent_transactions['bq_block_time'].unique().tolist()
-    mc_df = bitquery.get_market_cap_df(token, times=mc_tx)
-    df_recent_transactions = df_recent_transactions.merge(
-        mc_df,
-        on="bq_block_time",
-        how="left"
-    )
-
-    # Merge the token status df (Since it is 1 row, copy it for each transaction)
-    df_status = df_status.merge(df_summary, how="cross")
-    df_recent_transactions = df_status.merge(df_recent_transactions, how="cross")
-
-    st.dataframe(df_recent_transactions, use_container_width=True)
+    df_raw_training_data = CoinTrainingDataParser().get_raw_pair_training_data(token, pair_address)
+    st.dataframe(df_raw_training_data, use_container_width=True)
 
     # col1, col2 = st.columns(2)
     # with col1:

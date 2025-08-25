@@ -19,7 +19,6 @@ class SolanaTokenSummary:
     """
     Retrieves Solana token summary from multiple sources.
     """
-
     def __init__(self, rpc_url=None):
         self.rpc_url = rpc_url or "https://api.mainnet-beta.solana.com"
         self.session = requests.Session()
@@ -228,6 +227,15 @@ class SolanaTokenSummary:
         data = self._birdeye_fetch("defi/token_security", {"address": mint_address})
         return data.get("data") if data.get("success") else None
 
+    def _birdeye_get_token_supply(self, mint_address: str) -> float:
+        """
+        Get the token supply information from the Birdeye API.
+        """
+        be_security = self._birdeye_get_token_security(mint_address)
+        if not be_security:
+            return 0
+        return float(be_security.get("totalSupply", 0) or 0)
+
     def _birdeye_get_pair_overview(self, pair_address: str) -> Optional[dict]:
         """
         Get the overview information for a specific trading pair from the Birdeye API.
@@ -244,7 +252,7 @@ class SolanaTokenSummary:
     def _birdeye_get_wallet_overview(self, wallet_address: str) -> Optional[dict]:
         """
         Get the wallet overview information for a specific wallet from the Birdeye API.
-        @see https://public-api.birdeye.so/wallet/v2/net-worth-details
+        @see https://docs.birdeye.so/reference/get-wallet-v2-net-worth-details
         """
         data = self._birdeye_fetch(
             "wallet/v2/net-worth-details",
@@ -346,11 +354,10 @@ class SolanaTokenSummary:
         metadata = self._solscan_get_wallet_metadata(wallet_address)
         if not metadata:
             return None
-        
-        # Age should be guessed by funded_by[block_time]
-        fund_block_time_timestamp = metadata.get("funded_by", {}).get("block_time")
-        age = Utils.get_days_since(fund_block_time_timestamp)
-        return age
+
+        # Age is present on active_age
+        active_age = metadata.get("active_age", 0)
+        return active_age
 
     @cache_handler.cache(ttl_s=MINUTE_IN_SECONDS * 2)
     def _solscan_get_wallet_metadata(self, wallet_address: str) -> Optional[dict]:
@@ -369,7 +376,40 @@ class SolanaTokenSummary:
         )
         if not data:
             return None
-        return data.get("data", data) 
+        return data.get("data", data)
+
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    def _solscan_get_wallet_created_pools(self,
+            wallet_address: str,
+            page: int = 1,
+            page_size: int = 100
+        ) -> Optional[List[dict]]:
+        """
+        Get the pools created by a wallet.
+
+        Args:
+            wallet_address (str): The wallet address.
+            page (int): The page number to retrieve.    
+            page_size (int): The number of results to return per page.
+
+        Returns:
+            Optional[List[dict]]: A list of pools created by the wallet, or None if not found.
+        """
+        data = self._solscan_fetch(
+            "account/defi/activities",
+            {
+                "address": wallet_address,
+                "sort_by": "block_time",
+                "sort_order": "desc",
+                "activity_type[]": "ACTIVITY_POOL_CREATE",
+                "page": page,
+                "page_size": page_size
+            }
+        )
+        if not data:
+            return None
+
+        return data.get("data", data)
 
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _solscan_fetch(self, method: str, params: dict = None) -> dict:
@@ -460,45 +500,50 @@ class SolanaTokenSummary:
         pair_created_at = dexscreener_info.get("pairCreatedAt")
 
         # -- RUG CHECK
-        score = self._rugcheck_get_token_info(mint_address).get("score_normalised", 0)
+        rc_token_info = self._rugcheck_get_token_info(mint_address)
+        token_symbol = rc_token_info.get("tokenMeta", {}).get("symbol", "")
+        score = rc_token_info.get("score_normalised", 0)
         risks = self._rugcheck_get_token_risks(mint_address)
-        nomint = self._rugcheck_check_mint_authority(mint_address)
+        mint_authority = self._rugcheck_check_mint_authority(mint_address)
         is_mutable = self._rugcheck_check_is_mutable(mint_address)
-        is_frozen = self._rugcheck_check_freeze_authority(mint_address)
+        is_freezable = self._rugcheck_check_freeze_authority(mint_address)
         lp_locked = self._rugcheck_get_liquidity_locked(mint_address, pair_address)
 
         # -- Solscan
         wallet_metadata = self._solscan_get_wallet_metadata(creator_address)
         wallet_funded_by = wallet_metadata.get("funded_by", {}).get("funded_by", "UNKNOWN")
         wallet_age = self._solscan_estimate_wallet_age(creator_address)
+        creator_created_pools = self._solscan_get_wallet_created_pools(creator_address)
 
         # -- Aggregate response
         return {
+            "token_symbol": token_symbol,
             "mint_address": mint_address,
             "pair_address": pair_address,
             # **concentration,
 
             #-- RUG CHECK data
             "rc_risk_score": score,
-            "rc_risks": risks,
-            "rc_no_mint": nomint,
-            "rc_is_mutable": is_mutable,
-            "rc_is_frozen": is_frozen,
+            "rc_risks_desc": risks,
+            # "rc_mint_authority": mint_authority,
+            # "rc_is_mutable": is_mutable,
+            # "rc_is_freezeable": is_freezable,
             "rc_liquidity_locked": lp_locked,
 
             # -- Solscan
             "ss_creator_wallet_funded_by": wallet_funded_by,
             "ss_creator_wallet_age_days": wallet_age,
+            "ss_creator_pools_created": len(creator_created_pools) if creator_created_pools else 0,
 
             # -- Birdeye
             
             # Security & Creator info (Birdeye)
-            "be_top10_holders_plus_creator_percentage": be_top_holders_percent,
+            # "be_top10_holders_plus_creator_percentage": be_top_holders_percent,
             "be_creation_tx": be_security.get("creationTx"),
-            "be_creation_time": be_security.get("creationTime"),
+            "be_creation_timestamp": be_security.get("creationTime"),
             "be_mint_tx": be_security.get("mintTx"),
-            "be_mint_time": be_security.get("mintTime"),
-            "be_total_supply": be_total_supply,
+            "be_mint_timestamp": be_security.get("mintTime"),
+            "be_total_token_supply": be_total_supply,
             "be_mutable_metadata": be_security.get("mutableMetadata"),
             "be_freezeable": be_security.get("freezeable") is not None,
             "be_freeze_authority": be_security.get("freezeAuthority") is not None,
@@ -507,44 +552,44 @@ class SolanaTokenSummary:
             "be_fake_token": be_security.get("fakeToken"),
             "be_is_true_token": be_security.get("isTrueToken"),
             "be_pre_market_holder": be_security.get("preMarketHolder"),
-            "be_transfer_fee_enable": be_security.get("transferFeeEnable"),
+            "be_transfer_fee_enabled": be_security.get("transferFeeEnable"),
 
-            # Creator Info
+            # Creator info
             "be_creator_percentage": float(be_security.get("creatorPercentage", 0) or 0),
             "be_creator_address": be_security.get("creatorAddress"),
             "be_creator_net_worth_usd": float(be_wallet_overview.get("net_worth", 0) or 0),
 
             # Pair / Market info
-            "be_liquidity_usd": be_overview.get("liquidity"),
-            "be_price_usd": be_overview.get("price"),
-            "be_volume_24h_usd": be_overview.get("volume_24h"),
-            "be_unique_wallets_24h": be_overview.get("unique_wallet_24h"),
+            "be_liquidity_pool_usd": be_overview.get("liquidity"),
+            # "be_price_usd": be_overview.get("price"),
+            "be_traded_volume_24h_usd": be_overview.get("volume_24h"),
+            "be_unique_traders_24h": be_overview.get("unique_wallet_24h"),
 
             # -- Dexscreener
             # Extras
-            "dex_price_usd": dexscreener_info.get("priceUsd"),
-            "dex_liquidity_usd": liquidity_usd_dex,
-            "dex_liquidity_base": dex_liquidity.get("base"),
-            "dex_liquidity_quote": dex_liquidity.get("quote"),
+            # "dex_price_usd": dexscreener_info.get("priceUsd"),
+            # "dex_liquidity_usd": liquidity_usd_dex,
+            # "dex_liquidity_base": dex_liquidity.get("base"),
+            # "dex_liquidity_quote": dex_liquidity.get("quote"),
             "dex_fdv": fdv,
-            "dex_marketcap": dexscreener_info.get("marketCap"),
-            "dex_liq_fdv_ratio": liq_fdv_ratio,
-            "dex_pair_age": pair_created_at,
+            # "dex_marketcap": dexscreener_info.get("marketCap"),
+            # "dex_liq_fdv_ratio": liq_fdv_ratio,
+            # "dex_pair_age": pair_created_at,
 
-            # Volume & Transaction Momentum
-            "dex_volume_h24": dexscreener_info.get("volume", {}).get("h24"),
-            "dex_volume_h6": dexscreener_info.get("volume", {}).get("h6"),
-            "dex_volume_h1": dexscreener_info.get("volume", {}).get("h1"),
-            "dex_volume_m5": dexscreener_info.get("volume", {}).get("m5"),
+            # Volume & Transaction momentum
+            # "dex_volume_h24": dexscreener_info.get("volume", {}).get("h24"),
+            # "dex_volume_h6": dexscreener_info.get("volume", {}).get("h6"),
+            # "dex_volume_h1": dexscreener_info.get("volume", {}).get("h1"),
+            # "dex_volume_m5": dexscreener_info.get("volume", {}).get("m5"),
 
-            "dex_txns_m5": dex_txns.get("m5"),
-            "dex_txns_h1": dex_txns.get("h1"),
-            "dex_txns_h6": dex_txns.get("h6"),
-            "dex_txns_h24": dex_txns.get("h24"),
+            # "dex_txns_m5": dex_txns.get("m5"),
+            # "dex_txns_h1": dex_txns.get("h1"),
+            # "dex_txns_h6": dex_txns.get("h6"),
+            # "dex_txns_h24": dex_txns.get("h24"),
 
             # Price momentum
-            "dex_price_change_h6": dex_price_change.get("h6"),
-            "dex_price_change_h24": dex_price_change.get("h24"),
+            # "dex_price_change_h6": dex_price_change.get("h6"),
+            # "dex_price_change_h24": dex_price_change.get("h24"),
 
             # Optional metadata
             "dex_socials": dexscreener_info.get("info", {}).get("socials"),

@@ -249,6 +249,7 @@ class AppData:
         return {
             "image_cache": f"{temp_storage_dir}/_image-cache",
             "session_state": f"{temp_storage_dir}/_session-state.json",
+            "permanent_data": f"{permanent_storage_dir}/data"
         }
 
     def get_assets_dir(self) -> str:

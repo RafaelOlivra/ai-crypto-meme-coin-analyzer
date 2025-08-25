@@ -1,5 +1,5 @@
 # accelerate
-# google-generativeai
+google-generativeai
 httpx
 limits
 openai

@@ -1,9 +1,9 @@
 import time
 import openai
 
-from services.AiProvider import AiProvider
+from services.ai.AiProvider import AiProvider
 from services.AppData import AppData
-from services.Logger import _log
+from services.log.Logger import _log
 
 
 class OpenAIProvider(AiProvider):

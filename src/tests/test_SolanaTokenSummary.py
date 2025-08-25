@@ -39,7 +39,14 @@ def test_get_birdeye_wallet_overview():
     _log("Wallet overview:", wallet_info)
     assert isinstance(wallet_info, dict)
     assert "net_worth" in wallet_info
-    
+
+def test_get_token_supply():
+    solana = SolanaTokenSummary()
+    token_supply = solana._birdeye_get_token_supply("2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv")
+    _log("Token supply:", token_supply)
+    assert isinstance(token_supply, float)
+    assert token_supply > 0
+
 ## Solscan
 
 def test_get_wallet_metadata():
@@ -49,6 +56,7 @@ def test_get_wallet_metadata():
     assert isinstance(metadata, dict)
     assert "account_address" in metadata
     assert "funded_by" in metadata
+    assert "active_age" in metadata
 
 def test_estimate_solscan_wallet_age():
     solana = SolanaTokenSummary()
@@ -56,6 +64,13 @@ def test_estimate_solscan_wallet_age():
     _log("Wallet Age Solscan:", wallet_age)
     assert isinstance(wallet_age, int)
     assert wallet_age > 18
+
+def test_solscan_get_wallet_created_pools():
+    solana = SolanaTokenSummary()
+    created_pools = solana._solscan_get_wallet_created_pools("49mafXeXXiqALKGw6bGTd8Wh4HGqvekDWQAfY5bkfrys")
+    _log("Created Pools Solscan:", len(created_pools))
+    assert isinstance(created_pools, list)
+    assert len(created_pools) > 9
 
 ## Dexscreener
 
