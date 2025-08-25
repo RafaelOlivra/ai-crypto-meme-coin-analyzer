@@ -17,6 +17,7 @@ Caddyfile
 *.jar
 /offload
 .conflict
+/.pytest_cache
 
 # Compiled Python bytecode
 *.py[cod]
