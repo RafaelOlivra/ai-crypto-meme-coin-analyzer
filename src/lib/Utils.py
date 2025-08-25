@@ -7,10 +7,16 @@ from datetime import datetime, date, timedelta
 from services.AppData import AppData
 from services.logger.Logger import _log
 
+# --- Configuration ---
 DATETIME_DISPLAY_FORMAT = AppData().get_config("datetime_display_format")
 TIME_DISPLAY_FORMAT = AppData().get_config("time_display_format")
 
 class Utils:
+    
+    # --------------------------
+    # URL Utils
+    # --------------------------
+    
     @staticmethod
     def slugify(string: str) -> str:
         """
@@ -68,23 +74,6 @@ class Utils:
         return "T" + formatted.replace(":", "").replace("-", "").replace("T", "").replace("Z", "").lower()
 
     @staticmethod
-    def is_json(data: str) -> bool:
-        """
-        Check if a given string is valid JSON.
-
-        Args:
-            data (str): The string to check.
-
-        Returns:
-            bool: True if the string is valid JSON, False otherwise.
-        """
-        try:
-            json.loads(data)
-            return True
-        except ValueError:
-            return False
-
-    @staticmethod
     def url_encode(text: str) -> str:
         """
         Encode a text string for use in a URL.
@@ -101,7 +90,32 @@ class Utils:
         if not isinstance(text, str):
             raise ValueError("Input must be a string")
         return requests.utils.quote(text)
+    
+    # --------------------------
+    # JSON Utils
+    # --------------------------
+        
+    @staticmethod
+    def is_json(data: str) -> bool:
+        """
+        Check if a given string is valid JSON.
 
+        Args:
+            data (str): The string to check.
+
+        Returns:
+            bool: True if the string is valid JSON, False otherwise.
+        """
+        try:
+            json.loads(data)
+            return True
+        except ValueError:
+            return False
+    
+    # --------------------------
+    # Date Utils
+    # --------------------------
+    
     @staticmethod
     def formatted_date(_date: date | datetime | str | int | None = None, format: str = "", delta_seconds: int = 0) -> str:
         """

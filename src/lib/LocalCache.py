@@ -3,12 +3,12 @@ import hashlib
 import time
 import requests
 import json
+import tempfile
 from functools import wraps
 from typing import Optional, Any, Callable
 
 # --- Configuration ---
-# Use a default cache directory relative to the script location
-DEFAULT_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache.temp")
+DEFAULT_CACHE_DIR = os.path.join(tempfile.gettempdir(), ".cache.temp")
 DEFAULT_TTL_SECONDS = 6000
 
 class LocalCache:
