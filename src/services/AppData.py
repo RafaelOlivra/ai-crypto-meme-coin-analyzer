@@ -57,43 +57,30 @@ class AppData:
 
         return None  # Return None if the key is not found in either place
 
-    def get_api_key(self, key: str) -> str:
+    def get_api_key(self, key: str, default: str = "") -> str:
         """
         Retrieve an API key from environment variables.
-        This allows mapping service names to their corresponding API keys.
-        It will fallback to the environment variable with the same name as the key.
-
-        Args:
-            key (str): The key name of the API service (e.g., 'googlemaps').
-
-        Returns:
-            str: The corresponding API key, or None if not found.
-
-        Note:
-            This method uses a predefined mapping of service names to environment variable names.
-            Make sure the corresponding environment variables are set before calling this method.
+        Falls back to the provided default if not found.
         """
         key_map = {
             "fastapi": "FASTAPI_KEYS",
             "huggingface": "HUGGINGFACE_API_KEY",
-            "googlegemini": "GEMINY_API_KEY",
+            "googlegemini": "GEMINI_API_KEY",  # fixed typo "GEMINY"
             "openai": "OPENAI_API_KEY"
         }
-        
-        # If the key is not found we can try a fallback by looking for an
-        # environment variable with the same name as the key.
-        env_key = f"{key.upper()}"
+
+        # Try direct env var match
+        env_key = key.upper()
         if env_key in os.environ:
-            return os.getenv(env_key)
+            return os.environ[env_key]
 
-        try:
-            if not key_map.get(key):
-                raise ValueError("API key not found.")
-        except ValueError as e:
-            _log(f"Error retrieving API key: {e}", level="ERROR")
-            return None
+        # Try mapped env var
+        mapped_env = key_map.get(key)
+        if mapped_env and mapped_env in os.environ:
+            return os.environ[mapped_env]
 
-        return os.getenv(key_map.get(key))
+        # Fallback to default
+        return default
     
     # --------------------------
     # App State Handling

@@ -12,6 +12,7 @@ from lib.Utils import Utils
 from services.logger.Logger import _log
 
 DEFAULT_CACHE_TTL = 300
+RPC_CACHE_TTL = 2
 MINUTE_IN_SECONDS = 60
 DAYS_IN_SECONDS = 24 * 60 * 60
 
@@ -20,7 +21,7 @@ class SolanaTokenSummary:
     Retrieves Solana token summary from multiple sources.
     """
     def __init__(self, rpc_url=None):
-        self.rpc_url = rpc_url or "https://api.mainnet-beta.solana.com"
+        self.rpc_url = rpc_url or AppData().get_api_key("rpc_node_endpoint", "https://api.mainnet-beta.solana.com")
         self.session = requests.Session()
         self.birdeye_api_key = AppData().get_api_key("birdeye_api_key")
         self.helius_api_key = AppData().get_api_key("helius_api_key")
@@ -30,6 +31,7 @@ class SolanaTokenSummary:
     # Solana RPC info
     # --------------------------
 
+    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def _rpc_get_mint_info(self, mint_address: str) -> Optional[dict]:
         data = self._rpc_fetch("getAccountInfo", [mint_address, {"encoding": "jsonParsed"}])
         try:
@@ -37,13 +39,14 @@ class SolanaTokenSummary:
         except (KeyError, TypeError):
             return None
 
-    def _rpc_get_token_supply(self, mint_address: str) -> Decimal:
+    @cache_handler.cache(ttl_s=MINUTE_IN_SECONDS)
+    def _rpc_get_token_supply(self, mint_address: str) -> int:
         data = self._rpc_fetch("getTokenSupply", [mint_address])
         try:
-            return Decimal(data["result"]["value"]["uiAmount"])
+            return int(data["result"]["value"]["uiAmount"])
         except (KeyError, TypeError):
-            return Decimal(0)
-
+            return 0
+    @cache_handler.cache(ttl_s=MINUTE_IN_SECONDS)
     def _rpc_get_largest_accounts(self, mint_address: str) -> List[dict]:
         data = self._rpc_fetch("getTokenLargestAccounts", [mint_address])
         try:
@@ -52,10 +55,9 @@ class SolanaTokenSummary:
             return []
 
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
-    def _rpc_estimate_wallet_age(self, wallet_address: str) -> Dict[str, Any]:
+    def _rpc_estimate_wallet_age(self, wallet_address: str) -> int:
         """
         Get the wallet age (days since first transaction).
-        Returns a dict with first_tx_time (datetime) and age_days (int).
         """
         before: Optional[str] = None
         oldest_sig: Optional[str] = None
@@ -78,7 +80,7 @@ class SolanaTokenSummary:
                 break
 
         if not oldest_sig:
-            return {"error": "No transactions found for this wallet: " + wallet_address}
+            return -1
 
         # Fetch transaction details to get blockTime
         tx_data = self._rpc_fetch("getTransaction", [oldest_sig, {"encoding": "json"}])
@@ -86,21 +88,18 @@ class SolanaTokenSummary:
         block_time = tx.get("blockTime")
 
         if block_time is None:
-            return {"error": "Could not fetch block time."}
+            return -1
 
         first_tx_time = datetime.fromtimestamp(block_time, tz=timezone.utc)
         now = datetime.now(timezone.utc)
         age_days = (now - first_tx_time).days
 
-        return {
-            "first_tx_time": first_tx_time,
-            "age_days": age_days
-        }
+        return age_days
 
     def _rpc_check_nomint(self, mint_info: dict) -> bool:
         return mint_info.get("mintAuthority") is None
     
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    @cache_handler.cache(ttl_s=RPC_CACHE_TTL)
     def _rpc_fetch(self, method: str, params: list) -> dict:
         """
         Fetches data from the Solana RPC endpoint with retry logic.
