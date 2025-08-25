@@ -1,6 +1,7 @@
 import re
 import requests
 import json
+import hashlib
 
 from datetime import datetime, date, timedelta
 
@@ -307,3 +308,42 @@ class Utils:
         if not date:
             return 0
         return (datetime.now() - date).days
+
+    # --------------------------
+    # Hash Utils
+    # --------------------------
+    
+    @staticmethod
+    def hash(input):
+        """
+        Hashes the input using SHA-256, supporting various data types.
+        
+        The function serializes the input (string, object, list, or dict)
+        into a consistent JSON string before hashing.
+        
+        Args:
+            input (any): The input to hash. Can be a string, list, dictionary,
+                        or other JSON-serializable object.
+        
+        Returns:
+            str: The hexadecimal representation of the hash.
+        """
+        if isinstance(input, str):
+            # Already a string, just encode it
+            data_to_hash = input.encode('utf-8')
+        elif isinstance(input, (list, dict)):
+            # For lists and dictionaries, serialize them to a canonical JSON string
+            # using sort_keys=True to ensure consistent hashing regardless of order.
+            data_to_hash = json.dumps(input, sort_keys=True).encode('utf-8')
+        else:
+            # For other JSON-serializable objects (like ints, floats, booleans)
+            # or for simple objects, convert to a string and encode.
+            try:
+                data_to_hash = json.dumps(input).encode('utf-8')
+            except TypeError:
+                # Fallback for non-JSON-serializable objects. This might not
+                # produce consistent hashes for complex, un-serializable objects.
+                data_to_hash = str(input).encode('utf-8')
+
+        # Create the SHA-256 hash object and return the hexdigest
+        return hashlib.sha256(data_to_hash).hexdigest()

@@ -81,7 +81,20 @@ class AppData:
 
         # Fallback to default
         return default
-    
+
+    def get_env_var(self, key: str, default: str = "") -> str:
+        """
+        Retrieve an environment variable value.
+
+        Args:
+            key (str): The name of the environment variable.
+            default (str, optional): The default value to return if the env var is not found.
+
+        Returns:
+            str: The value of the environment variable, or the default if not found.
+        """
+        return os.getenv(key, default)
+
     # --------------------------
     # App State Handling
     # --------------------------

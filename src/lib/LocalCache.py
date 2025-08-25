@@ -5,7 +5,8 @@ import requests
 import json
 import tempfile
 from functools import wraps
-from typing import Optional, Any, Callable
+from typing import Callable
+
 
 # --- Configuration ---
 DEFAULT_CACHE_DIR = os.path.join(tempfile.gettempdir(), ".cache.temp")
@@ -124,36 +125,44 @@ class LocalCache:
             return url
             
     def cache(self, ttl_s: int = DEFAULT_TTL_SECONDS):
-        """
-        Decorator to cache the return value of a function to a local file.
-        """
         ttl_ms = ttl_s * 1000
         
         def decorator(func: Callable):
             @wraps(func)
             def wrapper(*args, **kwargs):
-                # Check if the function is a method
                 is_method = '.' in func.__qualname__
+                instance_id = None
+                cache_args = args
                 
-                if is_method and len(args) > 0:
-                    cache_args = args[1:]
-                else:
-                    cache_args = args
+                if is_method and args:
+                    instance = args[0]
+                    # Check for a persistent instance ID first
+                    if hasattr(instance, 'instance_id'):
+                        instance_id = str(instance.instance_id)
+                    # Fallback to a non-persistent ID
+                    else:
+                        instance_id = "__DEFAULT__"
 
-                # Create a unique cache key based on function name and arguments
-                args_str = json.dumps([func.__name__, cache_args, kwargs], sort_keys=True)
+                    cache_args = args[1:]
+                
+                # The rest of the logic remains unchanged.
+                key_components = [func.__name__, cache_args, kwargs]
+                if instance_id:
+                    key_components.append(instance_id)
+
+                args_str = json.dumps(key_components, sort_keys=True)
                 key = hashlib.md5(args_str.encode()).hexdigest()
                 cache_file_path = self._get_file_path(key, ext=".json")
 
                 if not self._is_expired(cache_file_path, ttl_ms):
                     try:
-                        print(f"Cache hit for function '{func.__name__}'")
+                        print(f"Cache hit for function '{func.__name__}' on instance {instance_id}")
                         with open(cache_file_path, "r") as f:
                             return json.load(f)
                     except (IOError, json.JSONDecodeError) as e:
                         print(f"Error reading from cache, re-running function: {e}")
 
-                print(f"Cache miss for function '{func.__name__}', running original function...")
+                print(f"Cache miss for function '{func.__name__}' on instance {instance_id}, running original function...")
                 result = func(*args, **kwargs)
 
                 try:

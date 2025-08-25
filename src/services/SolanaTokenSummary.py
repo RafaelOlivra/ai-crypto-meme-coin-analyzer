@@ -1,10 +1,10 @@
 import time
+import random
 import requests
 import pandas as pd
 from requests.exceptions import RequestException
 from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Optional, Dict, Any, List
+from typing import Optional, Any, List
 
 from services.AppData import AppData
 from lib.LocalCache import cache_handler
@@ -20,12 +20,25 @@ class SolanaTokenSummary:
     """
     Retrieves Solana token summary from multiple sources.
     """
-    def __init__(self, rpc_url=None):
-        self.rpc_url = rpc_url or AppData().get_api_key("rpc_node_endpoint", "https://api.mainnet-beta.solana.com")
+    def __init__(self, rpc_endpoints: Optional[list] = None):
+
+        # Multiple RPC endpoints can be provided as a comma-separated string or a list.
+        endpoints = rpc_endpoints or AppData().get_env_var(
+            "RPC_NODE_ENDPOINTS",
+            "https://api.mainnet-beta.solana.com"
+        )
+        if isinstance(endpoints, str):
+            self.rpc_endpoints = [e.strip() for e in endpoints.split(",")]
+        elif isinstance(endpoints, list):
+            self.rpc_endpoints = endpoints
+        else:
+            raise ValueError("rpc_endpoints must be a URL string or list")
+         
         self.session = requests.Session()
         self.birdeye_api_key = AppData().get_api_key("birdeye_api_key")
         self.helius_api_key = AppData().get_api_key("helius_api_key")
         self.solscan_api_key = AppData().get_api_key("solscan_api_key")
+        self.instance_id = Utils.hash(self.rpc_endpoints) # For caching
 
     # --------------------------
     # Solana RPC info
@@ -102,7 +115,7 @@ class SolanaTokenSummary:
     @cache_handler.cache(ttl_s=RPC_CACHE_TTL)
     def _rpc_fetch(self, method: str, params: list) -> dict:
         """
-        Fetches data from the Solana RPC endpoint with retry logic.
+        Fetches data from a random Solana RPC endpoint with retry logic.
         """
         max_retries = 3
         for attempt in range(max_retries):
@@ -112,15 +125,23 @@ class SolanaTokenSummary:
                 "method": method,
                 "params": params
             }
+
+            # Pick a random endpoint for this attempt
+            rpc_url = random.choice(self.rpc_endpoints)
+
             try:
-                response = self.session.post(self.rpc_url, json=payload, timeout=10) # Added a timeout
+                response = self.session.post(rpc_url, json=payload, timeout=10)
                 response.raise_for_status()
                 return response.json()
             except RequestException as e:
-                _log(f"Solana RPC fetch error on attempt {attempt + 1}/{max_retries}: {e}", level="ERROR")
+                _log(
+                    f"Solana RPC fetch error from {rpc_url} "
+                    f"on attempt {attempt + 1}/{max_retries}: {e}",
+                    level="ERROR"
+                )
                 if attempt < max_retries - 1:
-                    _log("Retrying in 3 seconds...", level="INFO")
-                    time.sleep(3) # Delay for 3 seconds before retrying
+                    _log("Retrying in 3 seconds with another endpoint...", level="INFO")
+                    time.sleep(3)
 
         _log(f"All {max_retries} attempts failed for method {method}.", level="ERROR")
         return {}

@@ -8,6 +8,12 @@ TEST_WALLET_ADDRESS = "GixMsyA2jeAoUEQkF2vZD77DdGGh7FFyW8qsezetyEs3"
 
 ## Solana RPC
 
+def test_rpc_invalid_endpoint():
+    solana = SolanaTokenSummary(rpc_endpoints=["https://invalid.rpc.endpoint"])
+    mint_info = solana._rpc_get_mint_info(TEST_TOKEN_ADDRESS)
+    _log("RPC Mint Info (Invalid Endpoint):", mint_info)
+    assert mint_info is None
+
 def test_rpc_get_mint_info():
     solana = SolanaTokenSummary()
     mint_info = solana._rpc_get_mint_info(TEST_TOKEN_ADDRESS)
