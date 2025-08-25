@@ -202,7 +202,7 @@ class BitQuerySolana:
     def get_recent_coin_tx_for_all_pools(
         self,
         mint_address: str,
-        limit: int = 1000000000
+        limit: int = 3000 # Max allowed is 1000000000
       ) -> List[Dict]:
         """
         Get the most recent transactions for a Solana coin.
@@ -287,7 +287,7 @@ class BitQuerySolana:
           self,
           mint_address: str,
           pair_address: str,
-          limit: int = 1000000000
+          limit: int = 3000 # Max allowed is 1000000000
         ):
         """
         Get recent trades for the token.
@@ -670,66 +670,69 @@ class BitQuerySolana:
             return None
           
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
-    def estimate_wallets_age(self, wallet_addresses: list[str]) -> dict[str, Optional[int]]:
+    def estimate_wallets_age(self, wallet_addresses: list[str], window: int = 600) -> dict[str, Optional[int]]:
         """
         Get the wallet age (based on the first transaction) for multiple Solana wallets.
 
         Args:
             wallet_addresses (list[str]): List of Solana wallet addresses.
+            window (int): Max number of addresses per request (default=600).
 
         Returns:
             dict[str, Optional[int]]: Mapping of wallet address -> wallet age in days (or None if not found).
         """
 
-        # Format addresses for GraphQL
-        addresses_str = ", ".join([f'"{addr}"' for addr in wallet_addresses])
-
-        query = """
-        {
-          solana {
-            transfers(
-              receiverAddress: {in: [ADDRESSES]}
-            ) {
-              minimum(of: time)
-              receiver {
-                address
-              }
-            }
-          }
-        }
-        """
-        query = query.replace("ADDRESSES", addresses_str)
-
-        payload = {
-            "query": query,
-        }
-
-        response_data = self._fetch(
-            url=self.apiv1,
-            method="post",
-            data=json.dumps(payload),
-        )
-
         results: dict[str, Optional[int]] = {}
 
-        try:
-            transfers = response_data["data"]["solana"]["transfers"]
-            for tx in transfers:
-                block_date = tx["minimum"]
-                wallet_address = tx["receiver"]["address"]
+        # Split the list into chunks of size = window
+        for i in range(0, len(wallet_addresses), window):
+            chunk = wallet_addresses[i:i + window]
 
-                if block_date:
-                    age = Utils.get_days_since(block_date, format="%Y-%m-%d %H:%M:%S %Z")
-                    results[wallet_address] = age
-                else:
-                    results[wallet_address] = None
+            # Format addresses for GraphQL
+            addresses_str = ", ".join([f'"{addr}"' for addr in chunk])
 
-        except (KeyError, TypeError) as e:
-            _log(f"Error parsing BitQuery response: {e}", level="ERROR")
-            # fallback: mark all wallets as None
-            results = {addr: None for addr in wallet_addresses}
+            query = """
+            {
+              solana {
+                transfers(
+                  receiverAddress: {in: [ADDRESSES]}
+                ) {
+                  minimum(of: time)
+                  receiver {
+                    address
+                  }
+                }
+              }
+            }
+            """.replace("ADDRESSES", addresses_str)
+
+            payload = {"query": query}
+
+            response_data = self._fetch(
+                url=self.apiv1,
+                method="post",
+                data=json.dumps(payload),
+            )
+
+            try:
+                transfers = response_data["data"]["solana"]["transfers"]
+                for tx in transfers:
+                    block_date = tx["minimum"]
+                    wallet_address = tx["receiver"]["address"]
+
+                    if block_date:
+                        age = Utils.get_days_since(block_date, format="%Y-%m-%d %H:%M:%S %Z")
+                        results[wallet_address] = age
+                    else:
+                        results[wallet_address] = None
+
+            except (KeyError, TypeError) as e:
+                _log(f"Error parsing BitQuery response: {e}", level="ERROR")
+                # fallback: mark this chunk as None
+                results.update({addr: None for addr in chunk})
 
         return results
+
     
     # Liquidity
     
