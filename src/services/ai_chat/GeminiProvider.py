@@ -1,7 +1,7 @@
 import time
 import google.generativeai as genai
 
-from services.ai.AiProvider import AiProvider
+from services.ai_chat.AiProvider import AiProvider
 from services.AppData import AppData
 from services.logger.Logger import _log
 

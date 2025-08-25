@@ -11,11 +11,8 @@ Caddyfile
 *.temp
 *.tmp
 .run.powershell
-/data/.storage/
-/data/.log/
-/data/.permanent/
+/data/
 *.storage
-/app/__app__.py
 *.dat
 *.jar
 /offload

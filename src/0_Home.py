@@ -24,14 +24,8 @@ def Home():
     bitquery = BitQuerySolana()
     solana = SolanaTokenSummary()
 
-    assets_dir = app_data.get_assets_dir()
-
     # Set page title
     st.set_page_config(page_title="Home", page_icon="🐸", layout="wide")
-
-    # Styles
-    with open(f"{assets_dir}style.css") as css:
-        st.markdown(f"<style>{css.read()}</style>", unsafe_allow_html=True)
     
     st.title("🐸 Meme Coin Analyzer")
     

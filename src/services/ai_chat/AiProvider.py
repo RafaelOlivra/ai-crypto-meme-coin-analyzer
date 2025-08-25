@@ -47,7 +47,7 @@ class AiProvider:
 
     def _generate_prompt_from_template(
         self,
-        template_key: str = "main_prompt",
+        template_key: str = "chat_prompt",
         base_prompt: str = "",
         variables: dict = {}
     ) -> str:
@@ -100,7 +100,7 @@ class AiProvider:
 
         return parsed_json
 
-    def _load_base_prompt(self, template_key: str = "main_prompt") -> str:
+    def _load_base_prompt(self, template_key: str = "chat_prompt") -> str:
         """
         Load the base prompt from the config file.
 
@@ -118,7 +118,7 @@ class AiProvider:
             return self.set(template_key, data[template_key])
 
     def _override_base_prompt(
-        self, prompt: str = "", template_key: str = "main_prompt"
+        self, prompt: str = "", template_key: str = "chat_prompt"
     ) -> None:
         """
         Override the base prompt with a custom prompt.

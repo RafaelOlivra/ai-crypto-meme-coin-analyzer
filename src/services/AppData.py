@@ -74,7 +74,6 @@ class AppData:
             Make sure the corresponding environment variables are set before calling this method.
         """
         key_map = {
-            "scraperapi": "SCRAPER_API_KEY",
             "fastapi": "FASTAPI_KEYS",
             "huggingface": "HUGGINGFACE_API_KEY",
             "googlegemini": "GEMINY_API_KEY",
@@ -97,7 +96,7 @@ class AppData:
         return os.getenv(key_map.get(key))
     
     # --------------------------
-    # State Handling
+    # App State Handling
     # --------------------------
 
     def get_state(self, key: str) -> Any:
