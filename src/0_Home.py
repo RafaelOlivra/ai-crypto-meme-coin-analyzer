@@ -14,7 +14,6 @@ from services.CoinTrainingDataPrep import CoinTrainingDataPrep
 # Load environment variables
 load_dotenv(find_dotenv("../.env"))
 
-
 # --------------------------
 # Page
 # ---------------------------
@@ -42,9 +41,8 @@ def Home():
             coins = {}
             meme_coins = bitquery.get_latest_tokens(platform="pump.fun", min_liquidity=10000, limit=20)
 
-            # Temporary dict to keep best version per mint
+            # Filter for "best" coins
             best_coins = {}
-
             for coin in meme_coins:
                 details = coin["Pool"]
                 base = details['Market']['BaseCurrency']
@@ -69,14 +67,11 @@ def Home():
                 }
             app_data.set_state("latest_tokens", coins, ttl=60)
 
+        # Static addresses for testing
         addresses = {
             "BILLY": {
                 "mint": "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump",
                 "pair": "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ"
-            },
-            "INN0": {
-                "mint": "E8uL1V5kxzgMSiTczapzocaneGwBreGdKL6SzW2Fpump",
-                "pair": "4CjK8NS1EAu3DpJUMBCV1CbPEGLsZMSem5R5ctZ7mSV4"
             },
             "PENGU": {
                 "mint": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
