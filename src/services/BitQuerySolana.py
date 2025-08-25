@@ -14,6 +14,7 @@ from lib.LocalCache import cache_handler
 DEFAULT_CACHE_TTL = 5
 DAYS_IN_SECONDS = 24 * 60 * 60
 YEARS_IN_SECONDS = 365 * DAYS_IN_SECONDS
+REALTIME_IN_SECONDS = 60 * 60 # 1 hour for Testing
 
 class BitQuerySolana:
     """
@@ -88,7 +89,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
             return None
     
-    @cache_handler.cache(ttl_s=60)
+    @cache_handler.cache(ttl_s=REALTIME_IN_SECONDS)
     def get_latest_tokens(
           self,
           platform: str = "pump.fun",
@@ -198,7 +199,7 @@ class BitQuerySolana:
 
     # Token Trades
     
-    @cache_handler.cache(ttl_s=1)
+    @cache_handler.cache(ttl_s=REALTIME_IN_SECONDS)
     def get_recent_coin_tx_for_all_pools(
         self,
         mint_address: str,
@@ -282,7 +283,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
    
-    @cache_handler.cache(ttl_s=60)
+    @cache_handler.cache(ttl_s=REALTIME_IN_SECONDS)
     def get_recent_pair_tx(
           self,
           mint_address: str,
@@ -370,7 +371,6 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response: {e}", level="ERROR")
             return []
     
-    @cache_handler.cache(ttl_s=60)
     def get_recent_pair_tx_df(
           self,
           mint_address: str,
@@ -736,7 +736,7 @@ class BitQuerySolana:
     
     # Liquidity
     
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    @cache_handler.cache(ttl_s=REALTIME_IN_SECONDS)
     def get_liquidity_pool_for_pair(
           self,
           pair_address: str,
