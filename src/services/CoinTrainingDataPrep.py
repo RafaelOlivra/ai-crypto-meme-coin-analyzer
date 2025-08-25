@@ -66,6 +66,7 @@ class CoinTrainingDataPrep:
         tx_wallets = df_bitquery_transactions['bq_transaction_maker'].unique().tolist()
         tx_ages = self.bitquery.estimate_wallets_age(tx_wallets)
         df_bitquery_transactions['bq_transaction_maker_age_days'] = df_bitquery_transactions['bq_transaction_maker'].map(tx_ages)
+        df_bitquery_transactions['bq_transaction_maker_age_days'].replace({-1: 0}, inplace=True)
 
         # add market cap
         be_total_supply = self.solana._birdeye_get_token_supply(mint_address)

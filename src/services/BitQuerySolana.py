@@ -203,7 +203,7 @@ class BitQuerySolana:
     def get_recent_coin_tx_for_all_pools(
         self,
         mint_address: str,
-        limit: int = 3000 # Max allowed is 1000000000
+        limit: int = 600 # Max allowed is 1000000000
       ) -> List[Dict]:
         """
         Get the most recent transactions for a Solana coin.
@@ -288,7 +288,7 @@ class BitQuerySolana:
           self,
           mint_address: str,
           pair_address: str,
-          limit: int = 3000 # Max allowed is 1000000000
+          limit: int = 600 # Max allowed is 1000000000
         ):
         """
         Get recent trades for the token.
@@ -375,7 +375,7 @@ class BitQuerySolana:
           self,
           mint_address: str,
           pair_address: str,
-          limit: int = 3000 # Max allowed is 1000000000
+          limit: int = 600 # Max allowed is 1000000000
         ) -> pd.DataFrame:
         """
         Get recent trades for the token as a DataFrame.
