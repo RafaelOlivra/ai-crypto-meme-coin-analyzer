@@ -36,7 +36,6 @@ class SolanaTokenSummary:
          
         self.session = requests.Session()
         self.birdeye_api_key = AppData().get_api_key("birdeye_api_key")
-        self.helius_api_key = AppData().get_api_key("helius_api_key")
         self.solscan_api_key = AppData().get_api_key("solscan_api_key")
         self.instance_id = Utils.hash(self.rpc_endpoints) # For caching
 
@@ -299,61 +298,6 @@ class SolanaTokenSummary:
             return response.json()
         except requests.RequestException as e:
             _log(f"Birdeye fetch error: {e}", level="ERROR")
-            return {}
-        
-    # --------------------------
-    # Helius Info
-    # --------------------------
-
-    def _helius_get_wallet_tx(self, wallet_address: str, limit: int = 10) -> Optional[List[dict]]:
-        """
-        Get the transaction of a wallet.
-
-        Args:
-            wallet_address (str): The wallet address.
-
-        Returns:
-            Optional[dict]: The first transaction object, or None if not found/error.
-        """
-        data = self._helius_fetch(
-            f"v0/addresses/{wallet_address}/transactions",
-            {
-                "limit": limit
-            }
-        )
-
-        # Invert the data to get the earliest transaction first
-        data = list(reversed(data))
-
-        if not data or not isinstance(data, list) or len(data) == 0:
-            return None
-
-        return data
-    
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def _helius_fetch(self, method: str, params: dict = None) -> dict:
-        """
-        Fetch data from the Helius API.
-
-        Args:
-            method (str): The API method/endpoint (relative to base URL).
-            params (dict, optional): Query parameters.
-
-        Returns:
-            dict: The JSON response, or {} if error.
-        @see https://docs.helius.dev/solana-apis
-        """
-        url = f"https://api.helius.xyz/{method}"
-        headers = {"accept": "application/json"}
-        params = params or {}
-        params["api-key"] = self.helius_api_key
-
-        try:
-            response = self.session.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            _log(f"Helius fetch error: {e}", level="ERROR")
             return {}
         
     # --------------------------
