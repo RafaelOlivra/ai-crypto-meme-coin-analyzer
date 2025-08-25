@@ -47,10 +47,10 @@ def test_get_token_pair_summary():
     assert "sell_volume" in summary
     assert "sell_volume_5min" in summary
     
-def test_get_recent_token_pair_trades():
+def test_get_recent_pair_trades():
     bitquery = BitQuerySolana()
-    mint_address = "J921djbXknTwmazepWsSbuwqjqqPsXA84FbGwormpump" # ELONGATE
-    pair_address = "4hxRUetaPGfN5KuRXvpmZWdNruXiWHX3XhX3mNwbj2AA" # PUMP.FUN
+    mint_address = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # ELONGATE
+    pair_address = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ" # PUMP.FUN
     trades = bitquery.get_recent_pair_tx(mint_address, pair_address, limit=5)
     _log(trades[0]['Transaction']['FeeInUSD'])
     assert isinstance(trades, list)

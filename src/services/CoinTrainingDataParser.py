@@ -26,7 +26,7 @@ class CoinTrainingDataParser:
         self.bitquery = BitQuerySolana()
         self.solana = SolanaTokenSummary()
 
-    @cache_handler.cache(ttl_s=1)
+    @cache_handler.cache(ttl_s=5)
     def get_raw_pair_training_data(self, mint_address: str, pair_address: str, save: bool = False) -> Optional[dict]:
         """
         Get raw training data for a token pair.
@@ -111,7 +111,9 @@ class CoinTrainingDataParser:
             "context_bq_trades",
             "context_bq_trades_5min",
             "bq_market_marketaddress",
-            "bq_trade_priceagainstsidecurrency"
+            "bq_trade_market_marketaddress",
+            "bq_trade_priceagainstsidecurrency",
+            "bq_transaction_feepayer",
         ]
         df_merged = df_merged.drop(columns=cols_to_remove, errors='ignore')
 

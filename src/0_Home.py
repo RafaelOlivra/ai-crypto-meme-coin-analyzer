@@ -7,7 +7,6 @@ from services.AppData import AppData
 from services.BitQuerySolana import BitQuerySolana
 from services.SolanaTokenSummary import SolanaTokenSummary
 from services.CoinTrainingDataParser import CoinTrainingDataParser
-from services.CoinGecko import CoinGecko
 
 # --------------------------
 # Configurations
@@ -26,9 +25,7 @@ def Home():
     bitquery = BitQuerySolana()
     solana = SolanaTokenSummary()
 
-    # Set logo
     assets_dir = app_data.get_assets_dir()
-    # st.logo(f"{assets_dir}logo.svg", size="large")
 
     # Set page title
     st.set_page_config(page_title="Home", page_icon="🐸", layout="wide")
@@ -126,26 +123,6 @@ def Home():
 
     df_raw_training_data = CoinTrainingDataParser().get_raw_pair_training_data(token, pair_address)
     st.dataframe(df_raw_training_data, use_container_width=True)
-
-    # col1, col2 = st.columns(2)
-    # with col1:
-    #     with st.container(border=True):
-    #         st.write(
-    #             """
-    #             ### 🏠 BOX 1
-    #             Description
-    #         """
-    #         )
-
-    # with col2:
-    #     with st.container(border=True):
-    #         st.write(
-    #             """
-    #             ### ✏️ BOX 2
-    #             Description
-    #         """
-    #         )
-
 
 # --------------------------
 # INIT

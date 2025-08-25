@@ -857,7 +857,7 @@ class BitQuerySolana:
           }
         }
         """
-        
+        # Replace the template variables
         base_query = ""
         for time in times:
             query_part = template.replace("SLUG", Utils.time_slugify(time)).replace("MINT_ADDRESS", mint_address).replace("TIME", Utils.formatted_date(time))
