@@ -42,12 +42,6 @@ Start the Streamlit application with:
 streamlit run ./src/0_Home.py
 ```
 
-## 🛠️ Tech Stack
-
--   **Python** – Data analysis & model building
--   **Streamlit** – Interactive UI
--   **.env** – Environment variable management
-
 ## 📌 Notes
 
 -   Make sure your `.env` file is properly configured before launching the app.
