@@ -88,7 +88,7 @@ class BitQuerySolana:
             _log(f"Error parsing BitQuery response or coin not found: {e}", level="ERROR")
             return None
     
-    @cache_handler.cache(ttl_s=1)
+    @cache_handler.cache(ttl_s=60)
     def get_latest_tokens(
           self,
           platform: str = "pump.fun",

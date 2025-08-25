@@ -111,7 +111,44 @@ class Utils:
             return True
         except ValueError:
             return False
-    
+
+    @staticmethod
+    def flatten_json_to_string(cell, parent_key: str = '', sep: str = '.') -> str:
+        """
+        Flatten a nested JSON-like cell into a 'key: value, key: value' string.
+
+        Args:
+            cell (dict | list | any): The JSON object or list to flatten.
+            parent_key (str, optional): Prefix key (used for nested dicts). Defaults to ''.
+            sep (str, optional): Separator between nested keys. Defaults to '.'.
+
+        Returns:
+            str: Flattened string representation.
+        """
+        if isinstance(cell, list):
+            parts = []
+            for i, item in enumerate(cell):
+                if isinstance(item, dict):
+                    # Recurse for nested dicts
+                    parts.extend([f"{k}: {v}" for k, v in item.items()])
+                else:
+                    parts.append(str(item))
+            return ", ".join(parts)
+
+        elif isinstance(cell, dict):
+            parts = []
+            for k, v in cell.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, (dict, list)):
+                    parts.append(Utils.flatten_json_to_string(v, parent_key=new_key, sep=sep))
+                else:
+                    parts.append(f"{new_key}: {v}")
+            return ", ".join(parts)
+
+        else:
+            return str(cell)
+
+
     # --------------------------
     # Date Utils
     # --------------------------
@@ -135,7 +172,7 @@ class Utils:
         return Utils.to_date_string(_date, format=format)
 
     @staticmethod
-    def to_date_string(_date: date | datetime | str, format="") -> str:
+    def to_date_string(_date: date | datetime | str | int, format="") -> str:
         """
         Convert a date object to a string.
 
@@ -148,6 +185,10 @@ class Utils:
         # Convert string to datetime object from isoformat
         if isinstance(_date, str):
             _date = datetime.fromisoformat(_date)
+
+        # If it's an int, convert to datetime (assuming it's a timestamp)
+        if isinstance(_date, int):
+            _date = datetime.fromtimestamp(_date)
 
         # If it's a date (not datetime), convert to datetime at midnight
         if isinstance(_date, date) and not isinstance(_date, datetime):

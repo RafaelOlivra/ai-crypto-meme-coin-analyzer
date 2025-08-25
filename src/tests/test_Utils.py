@@ -25,3 +25,17 @@ def test_formatted_date():
     delta_seconds = -3600  # 1 hour
     formatted_date = Utils.formatted_date(dt, delta_seconds=delta_seconds)
     assert formatted_date == "2025-08-14T14:30:39Z"
+
+def test_flatten_json_to_string():
+    nested_json = {
+        "a": 1,
+        "keyname": "value",
+        "b": {
+            "c": 2,
+            "d": 3
+        }
+    }
+    expected_flattened = "a: 1, keyname: value, b.c: 2, b.d: 3"
+    
+    flattened = Utils.flatten_json_to_string(nested_json)
+    assert flattened == expected_flattened

@@ -540,9 +540,9 @@ class SolanaTokenSummary:
             # Security & Creator info (Birdeye)
             # "be_top10_holders_plus_creator_percentage": be_top_holders_percent,
             "be_creation_tx": be_security.get("creationTx"),
-            "be_creation_timestamp": be_security.get("creationTime"),
+            "be_creation_date": Utils.to_date_string(be_security.get("creationTime")),
             "be_mint_tx": be_security.get("mintTx"),
-            "be_mint_timestamp": be_security.get("mintTime"),
+            "be_mint_date": Utils.to_date_string(be_security.get("mintTime")),
             "be_total_token_supply": be_total_supply,
             "be_mutable_metadata": be_security.get("mutableMetadata"),
             "be_freezeable": be_security.get("freezeable") is not None,

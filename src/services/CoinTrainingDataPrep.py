@@ -9,7 +9,9 @@ from typing import Optional, Dict, Any, List
 from services.AppData import AppData
 from services.BitQuerySolana import BitQuerySolana
 from services.SolanaTokenSummary import SolanaTokenSummary
+
 from lib.LocalCache import cache_handler
+from lib.Utils import Utils
 
 DEFAULT_CACHE_TTL = 300
 MINUTE_IN_SECONDS = 60
@@ -40,6 +42,14 @@ class CoinTrainingDataPrep:
 
         # -- Get Solana token summary
         df_sol_summary = self.solana.get_token_summary_df(mint_address, pair_address)
+        
+        # Convert known JSON cells to key: value, key: value
+        cells_to_convert = ['dex_socials', 'dex_websites']
+        for cell in cells_to_convert:
+            if cell in df_sol_summary.columns:
+                df_sol_summary[cell] = df_sol_summary[cell].apply(Utils.flatten_json_to_string)
+        
+        # Convert any other json cells to string
         df_sol_summary = df_sol_summary.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
         
         # -- Add BitQuery data
@@ -76,6 +86,7 @@ class CoinTrainingDataPrep:
             "context_be_creation_tx",
             "context_be_mint_tx",
             "context_be_mint_timestamp",
+            "context_be_mint_date",
             "context_be_creator_address",
             "context_bq_trade_currency_symbol",
             "context_bq_trade_currency_ismutable",
