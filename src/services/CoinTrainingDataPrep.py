@@ -1,6 +1,4 @@
 import os
-import time
-import requests
 import json
 import pandas as pd
 from requests.exceptions import RequestException
@@ -17,7 +15,7 @@ DEFAULT_CACHE_TTL = 300
 MINUTE_IN_SECONDS = 60
 DAYS_IN_SECONDS = 24 * 60 * 60
 
-class CoinTrainingDataParser:
+class CoinTrainingDataPrep:
     """
     Parser for preparing training data for a given coin pair on Solana.
     """

@@ -1,4 +1,3 @@
-from turtle import pd
 import streamlit as st
 import json
 from dotenv import load_dotenv, find_dotenv
@@ -6,7 +5,7 @@ from dotenv import load_dotenv, find_dotenv
 from services.AppData import AppData
 from services.BitQuerySolana import BitQuerySolana
 from services.SolanaTokenSummary import SolanaTokenSummary
-from services.CoinTrainingDataParser import CoinTrainingDataParser
+from services.CoinTrainingDataPrep import CoinTrainingDataPrep
 
 # --------------------------
 # Configurations
@@ -121,7 +120,7 @@ def Home():
 
     st.markdown("### Raw Training DataFrame")
 
-    df_raw_training_data = CoinTrainingDataParser().get_raw_pair_training_data(token, pair_address)
+    df_raw_training_data = CoinTrainingDataPrep().get_raw_pair_training_data(token, pair_address)
     st.dataframe(df_raw_training_data, use_container_width=True)
 
 # --------------------------
