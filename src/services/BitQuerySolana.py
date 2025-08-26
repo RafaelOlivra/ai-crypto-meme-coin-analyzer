@@ -11,7 +11,7 @@ from services.AppData import AppData
 from lib.Utils import Utils
 from lib.LocalCache import cache_handler
 
-DEFAULT_CACHE_TTL = 5
+DEFAULT_CACHE_TTL = 60 * 60 # 1 hour for Testing
 DAYS_IN_SECONDS = 24 * 60 * 60
 YEARS_IN_SECONDS = 365 * DAYS_IN_SECONDS
 REALTIME_IN_SECONDS = 60 * 60 # 1 hour for Testing

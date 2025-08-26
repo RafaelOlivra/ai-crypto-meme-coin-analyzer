@@ -106,6 +106,8 @@ def test_get_dexscreener_token_pair_info():
     assert "priceNative" in dex_info
     assert "priceUsd" in dex_info
     assert "volume" in dex_info
+    
+    
 ## RUG CHECK
 
 def test_rug_check_get_token_info():

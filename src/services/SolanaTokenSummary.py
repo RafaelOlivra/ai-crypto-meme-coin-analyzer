@@ -376,10 +376,10 @@ class SolanaTokenSummary:
         """
         Get the token supply information from the Birdeye API.
         """
-        be_security = self._birdeye_get_token_security(mint_address)
-        if not be_security:
+        be_token_security = self._birdeye_get_token_security(mint_address)
+        if not be_token_security:
             return 0
-        return float(be_security.get("totalSupply", 0) or 0)
+        return float(be_token_security.get("totalSupply", 0) or 0)
 
     def _birdeye_get_pair_overview(self, pair_address: str) -> Optional[dict]:
         """
@@ -548,56 +548,58 @@ class SolanaTokenSummary:
 
         Returns:
             dict: A dictionary containing token security, liquidity, 
-                price, holder concentration, and extra Dexscreener data.
+                price, holder concentration, and extra data.
         """
         
         # -- Birdeye data
-        be_security = self._birdeye_get_token_security(mint_address)
-        if not be_security:
+        be_token_security = self._birdeye_get_token_security(mint_address)
+        if not be_token_security:
             return {"error": "Token security info not found"}
 
         be_overview = self._birdeye_get_pair_overview(pair_address)
         if not be_overview:
             return {"error": "Pair overview not found"}
 
-        creator_address = be_security.get("creatorAddress", "")
+        creator_address = be_token_security.get("creatorAddress", "")
         be_wallet_overview = self._birdeye_get_wallet_overview(creator_address)
         if not be_wallet_overview:
             return {"error": "Wallet overview not found"}
 
         # Calculate BurntPercent-like metric
-        be_total_supply = float(be_security.get("totalSupply", 0) or 0)
-        be_top10 = float(be_security.get("top10HolderBalance", 0) or 0)
-        be_creator = float(be_security.get("creatorBalance", 0) or 0)
-        be_owner = float(be_security.get("ownerBalance", 0) or 0)
+        be_total_token_supply = float(be_token_security.get("totalSupply", 0) or 0)
+        be_top10 = float(be_token_security.get("top10HolderBalance", 0) or 0)
+        be_creator = float(be_token_security.get("creatorBalance", 0) or 0)
+        be_owner = float(be_token_security.get("ownerBalance", 0) or 0)
         be_held = be_top10 + be_creator + be_owner
-        be_top_holders_percent = round(max((be_total_supply - be_held) / be_total_supply * 100, 0), 2) if be_total_supply > 0 else 0.0
+        be_top_holders_percent = round(max((be_total_token_supply - be_held) / be_total_token_supply * 100, 0), 2) if be_total_token_supply > 0 else 0.0
         
         # -- Dexscreener data
-        dexscreener_info = self._dexscreener_get_token_pair_info(mint_address, pair_address) or {}
+        dexscreener_pair_info = self._dexscreener_get_token_pair_info(mint_address, pair_address) or {}
 
         # Parse Dexscreener values safely
-        dex_liquidity = dexscreener_info.get("liquidity", {})
-        dex_txns = dexscreener_info.get("txns", {})
-        dex_price_change = dexscreener_info.get("priceChange", {})
+        dex_liquidity = dexscreener_pair_info.get("liquidity", {})
+        dex_liquidity_usd = float(dex_liquidity.get("usd") or 0)
+        dex_liquidity_tokens = float(dex_liquidity.get("base") or 0)
+        dex_price_change = dexscreener_pair_info.get("priceChange", {})
+        dex_pair_market_cap = dexscreener_pair_info.get("marketCap", {})
 
         # Add liquidity ratio checks
-        fdv = float(dexscreener_info.get("fdv") or 0)
+        fdv = float(dexscreener_pair_info.get("fdv") or 0)
         liquidity_usd_dex = float(dex_liquidity.get("usd") or 0)
-        liq_fdv_ratio = round((liquidity_usd_dex / fdv * 100), 2) if fdv > 0 else None
 
         # Token age
-        pair_created_at = dexscreener_info.get("pairCreatedAt")
+        pair_created_at = dexscreener_pair_info.get("pairCreatedAt")
 
         # -- RUG CHECK
         rc_token_info = self._rugcheck_get_token_info(mint_address)
         token_symbol = rc_token_info.get("tokenMeta", {}).get("symbol", "")
-        score = rc_token_info.get("score_normalised", 0)
-        risks = self._rugcheck_get_token_risks(mint_address)
-        mint_authority = self._rugcheck_check_mint_authority(mint_address)
-        is_mutable = self._rugcheck_check_is_mutable(mint_address)
-        is_freezable = self._rugcheck_check_freeze_authority(mint_address)
-        lp_locked = self._rugcheck_get_liquidity_locked(mint_address, pair_address)
+        rc_score = rc_token_info.get("score_normalised", 0)
+        rc_risks = self._rugcheck_get_token_risks(mint_address)
+        rc_mint_authority = self._rugcheck_check_mint_authority(mint_address)
+        rc_is_mutable = self._rugcheck_check_is_mutable(mint_address)
+        rc_is_freezable = self._rugcheck_check_freeze_authority(mint_address)
+        rc_lp_locked = self._rugcheck_get_liquidity_locked(mint_address, pair_address)
+        rc_total_token_holders = rc_token_info.get("totalHolders", 0)
 
         # -- Solscan
         wallet_metadata = self._solscan_get_wallet_metadata(creator_address)
@@ -610,15 +612,16 @@ class SolanaTokenSummary:
             "token_symbol": token_symbol,
             "mint_address": mint_address,
             "pair_address": pair_address,
-            # **concentration,
 
             #-- RUG CHECK data
-            "rc_risk_score": score,
-            "rc_risks_desc": risks,
-            # "rc_mint_authority": mint_authority,
-            # "rc_is_mutable": is_mutable,
-            # "rc_is_freezeable": is_freezable,
-            "rc_liquidity_locked": lp_locked,
+            "rc_risk_score": rc_score,
+            "rc_risks_desc": rc_risks,
+            "rc_mint_authority": rc_mint_authority,
+            "rc_is_mutable": rc_is_mutable,
+            "rc_is_freezeable": rc_is_freezable,
+            "rc_liquidity_locked_tokens": rc_lp_locked,
+            "rc_is_liquidity_locked": True if rc_lp_locked else False,
+            "rc_total_token_holders": rc_total_token_holders,
 
             # -- Solscan
             "ss_creator_wallet_funded_by": wallet_funded_by,
@@ -628,49 +631,49 @@ class SolanaTokenSummary:
             # -- Birdeye
             
             # Security & Creator info (Birdeye)
-            # "be_top10_holders_plus_creator_percentage": be_top_holders_percent,
-            "be_creation_tx": be_security.get("creationTx"),
-            "be_creation_date": Utils.to_date_string(be_security.get("creationTime")),
-            "be_mint_tx": be_security.get("mintTx"),
-            "be_mint_date": Utils.to_date_string(be_security.get("mintTime")),
-            "be_total_token_supply": be_total_supply,
-            "be_mutable_metadata": be_security.get("mutableMetadata"),
-            "be_freezeable": be_security.get("freezeable") is not None,
-            "be_freeze_authority": be_security.get("freezeAuthority") is not None,
-            "be_top10_holder_percentage": round(float(be_security.get("top10HolderPercent", 0)) * 100, 2),
-            "be_non_transferable": be_security.get("nonTransferable"),
-            "be_fake_token": be_security.get("fakeToken"),
-            "be_is_true_token": be_security.get("isTrueToken"),
-            "be_pre_market_holder": be_security.get("preMarketHolder"),
-            "be_transfer_fee_enabled": be_security.get("transferFeeEnable"),
+            "be_top10_holders_plus_creator_percentage": be_top_holders_percent,
+            "be_top10_holder_percentage": round(float(be_token_security.get("top10HolderPercent", 0)) * 100, 2), #  Pool
+            "be_token_creation_tx": be_token_security.get("creationTx"),
+            "be_token_creation_date": Utils.to_date_string(be_token_security.get("creationTime")),
+            "be_token_mint_tx": be_token_security.get("mintTx"),
+            "be_token_mint_date": Utils.to_date_string(be_token_security.get("mintTime")),
+            "be_token_total_supply": be_total_token_supply,
+            "be_mutable_metadata": be_token_security.get("mutableMetadata"),
+            "be_freezeable": be_token_security.get("freezeable") is not None,
+            "be_freeze_authority": be_token_security.get("freezeAuthority") is not None,
+            "be_non_transferable": bool(be_token_security.get("nonTransferable")), # https://solana.com/pt/developers/guides/token-extensions/non-transferable
+            "be_is_NFT": bool(be_token_security.get("fakeToken")),
+            "be_pre_market_holder": be_token_security.get("preMarketHolder"),
+            "be_has_transfer_tax": bool(be_token_security.get("transferFeeEnable")),
 
             # Creator info
-            "be_creator_percentage": float(be_security.get("creatorPercentage", 0) or 0),
-            "be_creator_address": be_security.get("creatorAddress"),
+            "be_creator_percentage": float(be_token_security.get("creatorPercentage", 0) or 0),
+            "be_creator_address": be_token_security.get("creatorAddress"),
             "be_creator_net_worth_usd": float(be_wallet_overview.get("net_worth", 0) or 0),
 
             # Pair / Market info
-            "be_liquidity_pool_usd": be_overview.get("liquidity"),
-            # "be_price_usd": be_overview.get("price"),
+            # "be_liquidity_pool_usd": be_overview.get("liquidity"),
+            "be_price_usd": be_overview.get("price"),
             "be_traded_volume_24h_usd": be_overview.get("volume_24h"),
             "be_unique_traders_24h": be_overview.get("unique_wallet_24h"),
 
             # -- Dexscreener
-            # Extras
+            
             # "dex_price_usd": dexscreener_info.get("priceUsd"),
-            # "dex_liquidity_usd": liquidity_usd_dex,
-            # "dex_liquidity_base": dex_liquidity.get("base"),
-            # "dex_liquidity_quote": dex_liquidity.get("quote"),
+            "dex_liquidity_pool_usd": dex_liquidity_usd,
+            "dex_liquidity_pool_tokens": dex_liquidity_tokens,
             "dex_fdv": fdv,
-            # "dex_marketcap": dexscreener_info.get("marketCap"),
+            "dex_current_pool_mc": dex_pair_market_cap,
             # "dex_liq_fdv_ratio": liq_fdv_ratio,
-            # "dex_pair_age": pair_created_at,
+            "dex_pool_age_days": Utils.get_days_since(int(pair_created_at / 1000)),
 
+            "cl_pool_supply_token_percentage": round((dex_liquidity_tokens / be_total_token_supply * 100), 2),
+            
             # Volume & Transaction momentum
-            # "dex_volume_h24": dexscreener_info.get("volume", {}).get("h24"),
-            # "dex_volume_h6": dexscreener_info.get("volume", {}).get("h6"),
-            # "dex_volume_h1": dexscreener_info.get("volume", {}).get("h1"),
-            # "dex_volume_m5": dexscreener_info.get("volume", {}).get("m5"),
+            "dex_volume_h24": dexscreener_pair_info.get("volume", {}).get("h24"),
+            "dex_volume_h6": dexscreener_pair_info.get("volume", {}).get("h6"),
+            "dex_volume_h1": dexscreener_pair_info.get("volume", {}).get("h1"),
+            "dex_volume_m5": dexscreener_pair_info.get("volume", {}).get("m5"),
 
             # "dex_txns_m5": dex_txns.get("m5"),
             # "dex_txns_h1": dex_txns.get("h1"),
@@ -678,12 +681,12 @@ class SolanaTokenSummary:
             # "dex_txns_h24": dex_txns.get("h24"),
 
             # Price momentum
-            # "dex_price_change_h6": dex_price_change.get("h6"),
-            # "dex_price_change_h24": dex_price_change.get("h24"),
+            "dex_price_change_h6": dex_price_change.get("h6"),
+            "dex_price_change_h24": dex_price_change.get("h24"),
 
             # Optional metadata
-            "dex_socials": dexscreener_info.get("info", {}).get("socials"),
-            "dex_websites": dexscreener_info.get("info", {}).get("websites")
+            "dex_socials": dexscreener_pair_info.get("info", {}).get("socials"),
+            "dex_websites": dexscreener_pair_info.get("info", {}).get("websites")
         }
 
 

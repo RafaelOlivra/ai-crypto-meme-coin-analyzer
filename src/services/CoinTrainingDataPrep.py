@@ -48,6 +48,9 @@ class CoinTrainingDataPrep:
         for cell in cells_to_convert:
             if cell in df_sol_summary.columns:
                 df_sol_summary[cell] = df_sol_summary[cell].apply(Utils.flatten_json_to_string)
+                df_sol_summary[cell] = df_sol_summary[cell].str.replace("type: ", "")
+                df_sol_summary[cell] = df_sol_summary[cell].str.replace("label: ", "")
+                df_sol_summary[cell] = df_sol_summary[cell].str.replace("url: ", "")
         
         # Convert any other json cells to string
         df_sol_summary = df_sol_summary.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
@@ -83,12 +86,35 @@ class CoinTrainingDataPrep:
 
         # -- Remove unwanted columns
         cols_to_remove = [
+            "context_rc_liquidity_locked",
+            "context_rc_is_mutable",
+            "context_rc_is_freezeable",
+            "context_rc_liquidity_locked_tokens",
+
+            "context_be_top10_holders_plus_creator_percentage",
             "context_be_pre_market_holder",
             "context_be_creation_tx",
+            "context_be_creator_percentage",
+            "context_be_token_creation_tx",
+            "context_be_price_usd",
             "context_be_mint_tx",
+            "context_be_token_mint_tx",
             "context_be_mint_timestamp",
             "context_be_mint_date",
-            "context_be_creator_address",
+            "context_be_token_mint_date",
+            "context_be_traded_volume_24h_usd",
+            "context_be_unique_traders_24h",
+            "context_be_unique_traders_24h",
+            
+            "context_dex_fdv",
+            "context_dex_volume_h24",
+            "context_dex_volume_h6",
+            "context_dex_volume_h1",
+            "context_dex_volume_m5",
+            "context_dex_price_change_h6",
+            "context_dex_price_change_h24",
+
+            "context_bq_trade_currency_wrapped",
             "context_bq_trade_currency_symbol",
             "context_bq_trade_currency_ismutable",
             "context_bq_trade_currency_mintaddress",
@@ -103,30 +129,46 @@ class CoinTrainingDataPrep:
             "context_bq_trade_min5",
             "context_bq_buyers",
             "context_bq_buys",
+            "context_bq_buys_24h",
             "context_bq_buy_volume",
             "context_bq_buy_volume_5min",
+            "context_bq_buy_volume_24h",
             "context_bq_buys_5min",
             "context_bq_buyers_5min",
+            "context_bq_buyers_24h",
             "context_bq_makers",
             "context_bq_makers_24h",
             "context_bq_makers_5min",
             "context_bq_sell_volume",
             "context_bq_sell_volume_5min",
+            "context_bq_sell_volume_24h",
             "context_bq_sellers",
             "context_bq_sellers_5min",
+            "context_bq_sellers_24h",
             "context_bq_sells",
             "context_bq_sells_5min",
+            "context_bq_sells_24h",
             "context_bq_traded_volume",
             "context_bq_traded_volume_5min",
+            "context_bq_traded_volume_24h",
             "context_bq_trades",
             "context_bq_trades_5min",
+            "context_bq_trades_24h",
             "bq_market_marketaddress",
             "bq_trade_market_marketaddress",
             "bq_trade_priceagainstsidecurrency",
             "bq_transaction_feepayer",
         ]
         df_merged = df_merged.drop(columns=cols_to_remove, errors='ignore')
-        
+
+        # -- Rename Columns
+        cols_to_rename = {
+            "context_be_creation_date": "context_be_token_creation_date",
+            "context_bq_transaction_fee": "context_bq_transaction_fee_sol",
+            "bq_market_cap": "bq_mc_after_transaction",
+        }
+        df_merged = df_merged.rename(columns=cols_to_rename)
+
         # Standardize token symbol
         df_merged["context_token_symbol"] = df_merged["bq_trade_currency_symbol"]
 
