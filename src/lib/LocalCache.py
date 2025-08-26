@@ -45,6 +45,15 @@ class LocalCache:
         os.makedirs(self.cache_dir, exist_ok=True)
         self._initialized = True
 
+        # Cache disabled marker
+        self.cache_disabled_flag = os.path.join(self.cache_dir, ".py-local-cache-disabled")
+        
+    def _is_cache_disabled(self) -> bool:
+        """
+        Checks if caching is disabled for all instances of the LocalCache class.
+        """
+        return os.path.exists(self.cache_disabled_flag)
+
     def _get_file_path(self, key: str, ext: str = "") -> str:
         """
         Generates a full file path for a given cache key.
@@ -80,6 +89,9 @@ class LocalCache:
             str: The local file path to the cached resource, or the original URL
                  if caching fails.
         """
+        if self._is_cache_disabled():
+            return url
+
         if not url or url.startswith("file://") or url.startswith("http://localhost"):
             return url
 
@@ -125,6 +137,21 @@ class LocalCache:
             return url
             
     def cache(self, ttl_s: int = DEFAULT_TTL_SECONDS):
+        """
+        Wrapper function that caches the result of a function call.
+        Use this by decorating your function with @cache(ttl_s=TIME_IN_SECONDS).
+        Example:
+            @cache(ttl_s=60)
+            def fetch_data():
+                # Expensive operation
+                return {"data": 123}
+
+        Args:
+            ttl_s (int): Time-to-live for the cache in seconds.
+        """
+        if self._is_cache_disabled():
+            return
+
         ttl_ms = ttl_s * 1000
         
         def decorator(func: Callable):
@@ -175,6 +202,23 @@ class LocalCache:
                 return result
             return wrapper
         return decorator
+
+    def disable_cache(self):
+        """
+        Disables caching for all instances of the LocalCache class.
+        We add a .py-local-cache-disabled in the temp cache dir to mark it as disabled.
+        """
+        open(self.cache_disabled_flag, "a").close()
+
+    def enable_cache(self):
+        """
+        Enables caching for all instances of the LocalCache class.
+        We remove the .py-local-cache-disabled marker from the temp cache dir.
+        """
+        try:
+            os.remove(self.cache_disabled_flag)
+        except FileNotFoundError:
+            pass
 
 # Initialize the cache if not already initialized globally
 cache_handler = LocalCache()
