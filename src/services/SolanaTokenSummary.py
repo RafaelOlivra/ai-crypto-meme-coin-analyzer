@@ -26,20 +26,6 @@ class SolanaTokenSummary:
     SolanaTokenSummary is a class designed to retrieve and aggregate comprehensive
     data about Solana tokens from various sources, including Solana's own RPC nodes
     and third-party APIs like Birdeye, Dexscreener, Solscan, and RugCheck.
-
-    It provides both synchronous and asynchronous methods to efficiently fetch
-    information related to token security, liquidity, market data, and creator
-    wallet details. The class utilizes caching to reduce redundant API calls and
-    improve performance.
-
-    Attributes:
-        rpc_endpoints (list): A list of Solana RPC URLs used for data retrieval.
-        session (requests.Session): A synchronous session for API calls.
-        _async_session (aiohttp.ClientSession): An asynchronous session for
-            concurrent RPC calls.
-        birdeye_api_key (str): API key for the Birdeye service.
-        solscan_api_key (str): API key for the Solscan service.
-        instance_id (str): A unique hash based on RPC endpoints for caching purposes.
     """
     def __init__(self, rpc_endpoints: Optional[list] = None):
         """
