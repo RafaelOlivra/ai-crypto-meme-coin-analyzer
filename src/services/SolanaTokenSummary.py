@@ -648,7 +648,7 @@ class SolanaTokenSummary:
             "be_freezeable": be_token_security.get("freezeable") is not None,
             "be_freeze_authority": be_token_security.get("freezeAuthority") is not None,
             "be_non_transferable": bool(be_token_security.get("nonTransferable")), # https://solana.com/pt/developers/guides/token-extensions/non-transferable
-            "be_is_NFT": bool(be_token_security.get("fakeToken")),
+            "be_fake_token": bool(be_token_security.get("fakeToken")),
             "be_pre_market_holder": be_token_security.get("preMarketHolder"),
             "be_has_transfer_tax": bool(be_token_security.get("transferFeeEnable")),
 
