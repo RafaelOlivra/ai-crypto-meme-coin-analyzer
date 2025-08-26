@@ -91,7 +91,7 @@ def Home():
     token = addresses[current_latest_token]["mint"]
     pair_address = addresses[current_latest_token]["pair"]
 
-    st.markdown("### Token Summary (BirdEye + Dexscreener)")
+    st.markdown("### Token Summary (Aggregator)")
     df_sol_status = solana.get_token_summary_df(token, pair_address)
 
     # Convert any json cells to string
