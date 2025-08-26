@@ -45,7 +45,7 @@ class LocalCache:
         os.makedirs(self.cache_dir, exist_ok=True)
         self._initialized = True
 
-        # Cache disabled marker
+        # Cache disabled flag
         self.cache_disabled_flag = os.path.join(self.cache_dir, ".py-local-cache-disabled")
         
     def _is_cache_disabled(self) -> bool:
