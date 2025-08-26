@@ -4,6 +4,7 @@ import time
 
 from services.BitQuerySolana import BitQuerySolana
 from services.logger.Logger import _log
+from lib.Utils import Utils
 
 def test_get_access_token():
     bitquery = BitQuerySolana()
@@ -88,7 +89,7 @@ def test_get_wallet_age_multiple():
 def test_get_market_cap():
     bitquery = BitQuerySolana()
     mint_address= "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
-    times = ["2025-08-22T22:08:00Z", "2025-08-22T21:00:00Z"]
+    times = [Utils.formatted_date()]
     market_cap = bitquery.get_market_cap(mint_address, times=times)
     assert isinstance(market_cap, dict)
     _log("Market caps:", market_cap)

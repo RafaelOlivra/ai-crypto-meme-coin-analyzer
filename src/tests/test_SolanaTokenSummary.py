@@ -94,7 +94,7 @@ def test_solscan_get_wallet_created_pools():
 
 ## Dexscreener
 
-def test_get_dexscreener_token_pair_info():
+def test_dexscreener_get_token_pair_info():
     solana = SolanaTokenSummary()
     dex_info = solana._dexscreener_get_token_pair_info(
         TEST_TOKEN_ADDRESS,
@@ -109,7 +109,7 @@ def test_get_dexscreener_token_pair_info():
     
 ## RUG CHECK
 
-def test_rug_check_get_token_info():
+def test_rugcheck_get_token_info():
     solana = SolanaTokenSummary()
     token = TEST_TOKEN_ADDRESS 
     token_info = solana._rugcheck_get_token_info(token)
@@ -117,15 +117,15 @@ def test_rug_check_get_token_info():
     assert "token" in token_info
     assert "markets" in token_info
 
-def test_rug_check_get_token_risks():
+def test_rugcheck_get_token_risks():
     solana = SolanaTokenSummary()
-    token = TEST_TOKEN_ADDRESS
+    token = "2tEgg9Ep25V58zAZTCLWgPmHa5Yxwvc6AaVtfo4jpump"
     risks = solana._rugcheck_get_token_risks(token)
     _log("Risks:", risks)
     assert isinstance(risks, list)
-    assert "High" in risks[0]
+    assert "rugged tokens" in risks[0]
 
-def test_rug_check_get_market_data():
+def test_rugcheck_get_market_data():
     solana = SolanaTokenSummary()
     mint_address = TEST_TOKEN_ADDRESS
     pair_address = TEST_TOKEN_POOL
@@ -135,7 +135,7 @@ def test_rug_check_get_market_data():
     assert market_data["pubkey"] == pair_address
     assert "lp" in market_data
 
-def test_rug_check_liquidity_locked():
+def test_rugcheck_liquidity_locked():
     solana = SolanaTokenSummary()
     mint_address = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump"
     pair_address = "Fx8KEqbgsipindeuYw8poz8yw77F54sEef2DrBRjKgFB"
@@ -155,11 +155,13 @@ def test_rug_check_liquidity_locked():
 
 def test_get_token_summary():
     solana = SolanaTokenSummary()
-    status = solana.get_token_summary(
+    summary = solana.get_token_summary(
         TEST_TOKEN_ADDRESS,
         TEST_TOKEN_POOL
     )
-    _log("Token Summary:", status)
-    assert isinstance(status, dict)
-    assert "rc_risks_desc" in status
-    assert "be_freeze_authority" in status
+    _log("Token Summary:", summary)
+    assert isinstance(summary, dict)
+    assert "rc_risks_desc" in summary
+    assert "ss_creator_wallet_funded_by" in summary
+    assert "be_freeze_authority" in summary
+    assert "dex_liquidity_pool_usd" in summary

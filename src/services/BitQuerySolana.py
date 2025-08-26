@@ -883,7 +883,9 @@ class BitQuerySolana:
             method="post", 
             data=json.dumps(payload),
         )
-        
+
+        _log("MC Query", query)
+
         try:
             mc = {}
             response = response_data["data"]["Solana"]

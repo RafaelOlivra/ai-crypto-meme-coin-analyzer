@@ -840,6 +840,7 @@ class SolanaTokenSummary:
         rc_risks = self._rugcheck_get_token_risks(mint_address)
         rc_mint_authority = self._rugcheck_check_mint_authority(mint_address)
         rc_is_mutable = self._rugcheck_check_is_mutable(mint_address)
+        rc_is_freezable = self._rugcheck_check_freeze_authority(mint_address)
         rc_lp_locked = self._rugcheck_get_liquidity_locked(mint_address, pair_address)
         rc_pool_token_supply = rc_pair_info.get("lp", {}).get("tokenSupply", 0)
 
@@ -865,7 +866,7 @@ class SolanaTokenSummary:
             "rc_risks_desc": rc_risks,
             "rc_mint_authority": rc_mint_authority,
             "rc_is_mutable": rc_is_mutable,
-            "rc_is_freezeable": rc_is_freezeable,
+            "rc_is_freezable": rc_is_freezable,
             "rc_liquidity_locked_tokens": rc_lp_locked,
             "rc_is_liquidity_locked": True if rc_lp_locked else False,
             "rc_pool_token_supply": rc_pool_token_supply,

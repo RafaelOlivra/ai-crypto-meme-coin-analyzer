@@ -116,7 +116,7 @@ class Utils:
     @staticmethod
     def flatten_json_to_string(cell, parent_key: str = '', sep: str = '.') -> str:
         """
-        Flatten a nested JSON-like cell into grouped 'key: value | key: value' strings.
+        Flatten a nested JSON-like cell into grouped 'key: value' strings.
 
         Args:
             cell (dict | list | any): The JSON object or list to flatten.
@@ -126,23 +126,29 @@ class Utils:
         Returns:
             str: Flattened string representation.
         """
-        if isinstance(cell, list):
+        items = []
+
+        if isinstance(cell, dict):
+            for k, v in cell.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, (dict, list)):
+                    items.append(Utils.flatten_json_to_string(v, new_key, sep))
+                else:
+                    items.append(f"{new_key}: {v}")
+
+        elif isinstance(cell, list):
             groups = []
             for item in cell:
                 if isinstance(item, dict):
-                    # Group dict entries with " : "
-                    group = " : ".join([f"{k}: {v}" for k, v in item.items()])
-                    groups.append(group)
+                    groups.append(flatten_json_to_string(item, parent_key, sep))
                 else:
                     groups.append(str(item))
             return ", ".join(groups)
 
-        elif isinstance(cell, dict):
-            # Group dict entries directly
-            return " | ".join([f"{k}: {v}" for k, v in cell.items()])
-
         else:
-            return str(cell)
+            return f"{parent_key}: {cell}" if parent_key else str(cell)
+
+        return ", ".join(items)
 
 
     # --------------------------
