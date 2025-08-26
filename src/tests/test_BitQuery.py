@@ -69,15 +69,15 @@ def test_get_liquidity_pool():
     assert "Base" in liquidity_pool['Pool']
     
 def test_get_wallet_age():
-    solana = BitQuerySolana()
-    wallet_age = solana.estimate_wallet_age("2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T")
+    bitquery = BitQuerySolana()
+    wallet_age = bitquery.estimate_wallet_age("2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T")
     assert isinstance(wallet_age, int)
     _log("Wallet age:", wallet_age)
     assert wallet_age >= 5
     
 def test_get_wallet_age_multiple():
-    solana = BitQuerySolana()
-    wallet_age = solana.estimate_wallets_age([
+    bitquery = BitQuerySolana()
+    wallet_age = bitquery.estimate_wallets_age([
         "2QfBNK2WDwSLoUQRb1zAnp3KM12N9hQ8q6ApwUMnWW2T",
         "5wEyeeTwzaqdkgSw1TfeNbhWzppjWFv35aW8tk3vyS2x"
     ])
@@ -86,10 +86,10 @@ def test_get_wallet_age_multiple():
     assert all(age >= 5 for age in wallet_age.values())
 
 def test_get_market_cap():
-    solana = BitQuerySolana()
+    bitquery = BitQuerySolana()
     mint_address= "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
     times = ["2025-08-22T22:08:00Z", "2025-08-22T21:00:00Z"]
-    market_cap = solana.get_market_cap(mint_address, times=times)
+    market_cap = bitquery.get_market_cap(mint_address, times=times)
     assert isinstance(market_cap, dict)
     _log("Market caps:", market_cap)
     _log("Market cap value:", list(market_cap.values())[0])

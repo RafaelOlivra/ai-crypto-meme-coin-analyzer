@@ -44,7 +44,7 @@ class CoinTrainingDataPrep:
         df_sol_summary = self.solana.get_token_summary_df(mint_address, pair_address)
         
         # Convert known JSON cells to key: value, key: value
-        cells_to_convert = ['dex_socials', 'dex_websites']
+        cells_to_convert = ['dex_socials', 'dex_websites', 'be_metadata']
         for cell in cells_to_convert:
             if cell in df_sol_summary.columns:
                 df_sol_summary[cell] = df_sol_summary[cell].apply(Utils.flatten_json_to_string)
@@ -57,8 +57,8 @@ class CoinTrainingDataPrep:
         
         # -- Add BitQuery data
         
-        # summary
-        df_bitquery_summary = self.bitquery.get_token_pair_24h_summary_df(mint_address, pair_address)
+        # summary (Not needed anymore)
+        # df_bitquery_summary = self.bitquery.get_token_pair_24h_summary_df(mint_address, pair_address)
 
         # recent transactions
         df_bitquery_transactions = self.bitquery.get_recent_pair_tx_df(mint_address, pair_address)
@@ -76,9 +76,11 @@ class CoinTrainingDataPrep:
         df_bitquery_transactions['bq_market_cap'] = df_bitquery_transactions['bq_trade_priceinusd'] * be_total_supply
 
         # -- Merge DataFrames
-        df_sol_summary = df_sol_summary.merge(df_bitquery_summary, how="cross")
+        
+        # (Not needed anymore)
+        # df_sol_summary = df_sol_summary.merge(df_bitquery_summary, how="cross")
 
-        # Add context_ to all columns
+        # Add context_ prefix to all columns
         df_sol_summary = df_sol_summary.rename(columns=lambda x: f"context_{x}" if x != "context" else x)
 
         # -- Add Current Transactions
@@ -113,6 +115,12 @@ class CoinTrainingDataPrep:
             "context_dex_volume_m5",
             "context_dex_price_change_h6",
             "context_dex_price_change_h24",
+            "context_dex_price_usd",
+            "context_dex_liquidity_pool_usd",
+            "context_dex_txns_m5",
+            "context_dex_txns_h1",
+            "context_dex_txns_h6",
+            "context_dex_txns_h24",
 
             "context_bq_trade_currency_wrapped",
             "context_bq_trade_currency_symbol",
@@ -154,6 +162,7 @@ class CoinTrainingDataPrep:
             "context_bq_trades",
             "context_bq_trades_5min",
             "context_bq_trades_24h",
+            
             "bq_market_marketaddress",
             "bq_trade_market_marketaddress",
             "bq_trade_priceagainstsidecurrency",
@@ -165,7 +174,9 @@ class CoinTrainingDataPrep:
         cols_to_rename = {
             "context_be_creation_date": "context_be_token_creation_date",
             "context_bq_transaction_fee": "context_bq_transaction_fee_sol",
-            "bq_market_cap": "bq_mc_after_transaction",
+            "bq_trade_amount": "bq_trade_amount_token",
+            "bq_transaction_fee": "bq_transaction_fee_side",
+            "bq_market_cap": "bq_mc_usd",
         }
         df_merged = df_merged.rename(columns=cols_to_rename)
 

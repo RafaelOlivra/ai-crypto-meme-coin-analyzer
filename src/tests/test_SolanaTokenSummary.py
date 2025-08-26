@@ -1,5 +1,4 @@
 from services.logger.Logger import _log
-
 from services.SolanaTokenSummary import SolanaTokenSummary
 
 TEST_TOKEN_ADDRESS = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY

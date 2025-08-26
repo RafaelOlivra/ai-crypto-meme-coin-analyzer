@@ -23,11 +23,33 @@ DAYS_IN_SECONDS = 24 * 60 * 60
 
 class SolanaTokenSummary:
     """
-    Retrieves Solana token summary from multiple sources.
-    This class supports both synchronous and asynchronous RPC calls.
+    SolanaTokenSummary is a class designed to retrieve and aggregate comprehensive
+    data about Solana tokens from various sources, including Solana's own RPC nodes
+    and third-party APIs like Birdeye, Dexscreener, Solscan, and RugCheck.
+
+    It provides both synchronous and asynchronous methods to efficiently fetch
+    information related to token security, liquidity, market data, and creator
+    wallet details. The class utilizes caching to reduce redundant API calls and
+    improve performance.
+
+    Attributes:
+        rpc_endpoints (list): A list of Solana RPC URLs used for data retrieval.
+        session (requests.Session): A synchronous session for API calls.
+        _async_session (aiohttp.ClientSession): An asynchronous session for
+            concurrent RPC calls.
+        birdeye_api_key (str): API key for the Birdeye service.
+        solscan_api_key (str): API key for the Solscan service.
+        instance_id (str): A unique hash based on RPC endpoints for caching purposes.
     """
     def __init__(self, rpc_endpoints: Optional[list] = None):
+        """
+        Initializes the SolanaTokenSummary instance.
 
+        Args:
+            rpc_endpoints (Optional[list], optional): A list of RPC endpoint URLs.
+                Can also be a comma-separated string. Defaults to the value
+                from AppData().get_env_var("RPC_NODE_ENDPOINTS").
+        """
         # Multiple RPC endpoints can be provided as a comma-separated string or a list.
         endpoints = rpc_endpoints or AppData().get_env_var(
             "RPC_NODE_ENDPOINTS",
@@ -56,6 +78,16 @@ class SolanaTokenSummary:
 
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def _rpc_get_mint_info(self, mint_address: str) -> Optional[dict]:
+        """
+        Retrieves mint account information from a Solana RPC node.
+
+        Args:
+            mint_address (str): The public key of the token's mint address.
+
+        Returns:
+            Optional[dict]: A dictionary containing the parsed mint account
+                info, or None if the data is not found.
+        """
         data = self._rpc_fetch("getAccountInfo", [mint_address, {"encoding": "jsonParsed"}])
         try:
             return data["result"]["value"]["data"]["parsed"]["info"]
@@ -64,6 +96,15 @@ class SolanaTokenSummary:
         
     @cache_handler.cache(ttl_s=MINUTE_IN_SECONDS)
     def _rpc_get_token_supply(self, mint_address: str) -> int:
+        """
+        Retrieves the total token supply for a given mint address.
+
+        Args:
+            mint_address (str): The public key of the token's mint address.
+
+        Returns:
+            int: The total token supply. Returns 0 if the data is not found.
+        """
         data = self._rpc_fetch("getTokenSupply", [mint_address])
         try:
             return int(data["result"]["value"]["uiAmount"])
@@ -72,6 +113,16 @@ class SolanaTokenSummary:
     
     @cache_handler.cache(ttl_s=MINUTE_IN_SECONDS)
     def _rpc_get_largest_accounts(self, mint_address: str) -> List[dict]:
+        """
+        Retrieves the largest token holders for a given mint address.
+
+        Args:
+            mint_address (str): The public key of the token's mint address.
+
+        Returns:
+            List[dict]: A list of dictionaries, where each dictionary
+                represents a token holder. Returns an empty list on failure.
+        """
         data = self._rpc_fetch("getTokenLargestAccounts", [mint_address])
         try:
             return data["result"]["value"]
@@ -79,12 +130,23 @@ class SolanaTokenSummary:
             return []
         
     def _rpc_check_nomint(self, mint_info: dict) -> bool:
+        """
+        Checks if the mint authority for a token has been revoked.
+
+        Args:
+            mint_info (dict): The parsed mint information.
+
+        Returns:
+            bool: True if the mint authority is None, indicating it has been
+                revoked (no more tokens can be minted).
+        """
         return mint_info.get("mintAuthority") is None
     
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def _rpc_estimate_wallet_age(self, wallet_address: str) -> int:
         """
-        Estimate the wallet age for a single wallet address.
+        Estimates the wallet age for a single wallet address by finding
+        its first transaction.
 
         Args:
             wallet_address (str): The wallet address to check.
@@ -102,14 +164,16 @@ class SolanaTokenSummary:
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def _rpc_estimate_wallet_ages(self, wallet_addresses: List[str]) -> List[int]:
         """
-        Estimate the age for a list of wallets concurrently.
-        This function creates tasks and runs the asyncio event loop.
+        Estimates the age for a list of wallets concurrently by finding their
+        first transaction. This function uses asyncio to perform the checks
+        in parallel.
 
         Args:
             wallet_addresses (List[str]): The wallet addresses to check.
 
         Returns:
-            List[int]: A list of estimated ages for each wallet in days, or -1 if not found.
+            List[int]: A list of estimated ages for each wallet in days, or -1
+                for wallets where the age could not be determined.
         """
         tasks = [
             self._rpc_estimate_wallet_age_async(wallet)
@@ -121,7 +185,8 @@ class SolanaTokenSummary:
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     async def _rpc_estimate_wallet_age_async(self, wallet_address: str) -> int:
         """
-        Asynchronously get the wallet age (days since first transaction).
+        Asynchronously gets the wallet age (days since first transaction) by
+        paginating through transaction signatures.
 
         Args:
             wallet_address (str): The wallet address to check.
@@ -170,7 +235,15 @@ class SolanaTokenSummary:
     def _rpc_fetch(self, method: str, params: list) -> dict:
         """
         Fetches data from a random Solana RPC endpoint with retry logic.
-        (Synchronous version for compatibility)
+        This is a synchronous version for compatibility.
+
+        Args:
+            method (str): The RPC method to call (e.g., 'getAccountInfo').
+            params (list): The parameters for the RPC method.
+
+        Returns:
+            dict: The JSON response from the RPC endpoint, or an empty
+                dictionary on failure.
         """
         max_retries = 3
         for attempt in range(max_retries):
@@ -205,11 +278,17 @@ class SolanaTokenSummary:
     async def _rpc_fetch_async(self, method: str, params: list) -> dict:
         """
         Fetches data from multiple Solana RPC endpoints concurrently.
-        (Asynchronous version for performance)
-        
+        This asynchronous version is designed for high performance. It
+        sends requests to all available endpoints and returns the result
+        from the first one that responds successfully.
+
         Args:
             method (str): The RPC method to call.
             params (list): The parameters to pass to the RPC method.
+
+        Returns:
+            dict: The JSON response from the first successful RPC call,
+                or an empty dictionary on failure.
         """
         tasks = []
         async with aiohttp.ClientSession() as session:
@@ -250,13 +329,14 @@ class SolanaTokenSummary:
     
     async def _rpc_run_async_tasks(self, tasks: List) -> List[int]:
         """
-        Helper to run the main async tasks.
+        Helper to run a list of async tasks and handle exceptions.
 
         Args:
             tasks (List): A list of async tasks to run.
 
         Returns:
-            List[int]: A list of results or -1 for failed tasks.
+            List[int]: A list of results from the tasks. If a task fails,
+                the result is -1.
         """
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -275,15 +355,42 @@ class SolanaTokenSummary:
     # --------------------------
     
     def _rugcheck_get_token_info(self, mint_address: str) -> Optional[dict]:
+        """
+        Retrieves the main token report from the RugCheck API.
+
+        Args:
+            mint_address (str): The token's mint address.
+
+        Returns:
+            Optional[dict]: The token's full report, or None if not found.
+        """
         return self._rugcheck_fetch(mint_address)
 
     def _rugcheck_check_mint_authority(self, mint_address: str) -> bool:
+        """
+        Checks if the mint authority exists for a token using the RugCheck API.
+
+        Args:
+            mint_address (str): The token's mint address.
+
+        Returns:
+            bool: True if a mint authority is found, False otherwise.
+        """
         token_info = self._rugcheck_get_token_info(mint_address)
         if not token_info:
             return False
         return token_info.get("token", {}).get("mintAuthority") is not None
 
     def _rugcheck_get_token_risks(self, mint_address: str) -> list[str]:
+        """
+        Gets a list of identified risks for a token from the RugCheck API.
+
+        Args:
+            mint_address (str): The token's mint address.
+
+        Returns:
+            list[str]: A list of risk names. Returns an empty list on failure.
+        """
         token_info = self._rugcheck_get_token_info(mint_address)
         if not token_info:
             return []
@@ -291,18 +398,46 @@ class SolanaTokenSummary:
         return [risk["name"] for risk in risks]
 
     def _rugcheck_check_is_mutable(self, mint_address: str) -> bool:
+        """
+        Checks if the token's metadata is mutable according to RugCheck.
+
+        Args:
+            mint_address (str): The token's mint address.
+
+        Returns:
+            bool: True if the metadata is mutable, False otherwise.
+        """
         token_info = self._rugcheck_get_token_info(mint_address)
         if not token_info:
             return False
         return token_info.get("tokenMeta", {}).get("isMutable") is not None
 
     def _rugcheck_check_freeze_authority(self, mint_address: str) -> bool:
+        """
+        Checks if a freeze authority exists for the token using the RugCheck API.
+
+        Args:
+            mint_address (str): The token's mint address.
+
+        Returns:
+            bool: True if a freeze authority is found, False otherwise.
+        """
         token_info = self._rugcheck_get_token_info(mint_address)
         if not token_info:
             return False
         return token_info.get("token", {}).get("freezeAuthority") is not None
 
     def _rugcheck_get_market_data(self, mint_address: str, pair_address: str) -> Optional[dict]:
+        """
+        Retrieves market-specific data for a token-pair from RugCheck.
+
+        Args:
+            mint_address (str): The token's mint address.
+            pair_address (str): The liquidity pool pair address.
+
+        Returns:
+            Optional[dict]: The market data for the specified pair, or None if not found.
+        """
         data = self._rugcheck_fetch(mint_address)
         markets = data.get("markets", {})
         if not markets:
@@ -312,17 +447,46 @@ class SolanaTokenSummary:
                 return market
         return None
     
-    def _rugcheck_get_liquidity_locked(self, mint_address: str, pair_address: str) ->bool:
+    def _rugcheck_get_liquidity_locked(self, mint_address: str, pair_address: str) -> bool:
+        """
+        Checks the amount of liquidity locked for a given token pair.
+
+        Args:
+            mint_address (str): The token's mint address.
+            pair_address (str): The liquidity pool pair address.
+
+        Returns:
+            bool: The amount of locked liquidity, in tokens. Returns 0 if none is found.
+        """
         market_data = self._rugcheck_get_market_data(mint_address, pair_address)
         if not market_data:
             return False
         return market_data.get("lp", {}).get("lpLocked", 0)
     
-    def _rugcheck_is_liquidity_locked(self, mint_address: str, pair_address: str) ->bool:
+    def _rugcheck_is_liquidity_locked(self, mint_address: str, pair_address: str) -> bool:
+        """
+        Checks if liquidity is locked for a given token pair.
+
+        Args:
+            mint_address (str): The token's mint address.
+            pair_address (str): The liquidity pool pair address.
+
+        Returns:
+            bool: True if liquidity is locked, False otherwise.
+        """
         return self._rugcheck_get_liquidity_locked(mint_address, pair_address) > 1
 
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _rugcheck_fetch(self, mint_address: str) -> dict:
+        """
+        Fetches a token report from the RugCheck API.
+
+        Args:
+            mint_address (str): The token's mint address.
+
+        Returns:
+            dict: The JSON response from the API, or an empty dictionary on error.
+        """
         url = f"https://api.rugcheck.xyz/v1/tokens/{mint_address}/report"
         try:
             response = self.session.get(url, timeout=10)
@@ -337,10 +501,29 @@ class SolanaTokenSummary:
     # --------------------------
 
     def _dexscreener_get_token_info(self, mint_address: str) -> Optional[dict]:
+        """
+        Retrieves all pairs associated with a token from Dexscreener.
+
+        Args:
+            mint_address (str): The token's mint address.
+
+        Returns:
+            Optional[dict]: A list of all pairs found for the token.
+        """
         data = self._dexscreener_fetch(mint_address)
         return data.get("pairs", [])
 
     def _dexscreener_get_token_pair_info(self, mint_address: str, pair_address: str) -> Optional[dict]:
+        """
+        Retrieves specific pair information from Dexscreener.
+
+        Args:
+            mint_address (str): The token's mint address.
+            pair_address (str): The liquidity pool pair address.
+
+        Returns:
+            Optional[dict]: The pair information, or None if not found.
+        """
         pairs = self._dexscreener_get_token_info(mint_address)
         if not pairs:
             return None
@@ -351,6 +534,15 @@ class SolanaTokenSummary:
     
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _dexscreener_fetch(self, mint_address: str) -> dict:
+        """
+        Fetches token data from the Dexscreener API.
+
+        Args:
+            mint_address (str): The token's mint address.
+
+        Returns:
+            dict: The JSON response from the API, or an empty dictionary on error.
+        """
         url = f"https://api.dexscreener.com/latest/dex/tokens/{mint_address}"
         try:
             response = self.session.get(url, timeout=10)
@@ -368,23 +560,40 @@ class SolanaTokenSummary:
         """
         Get the token security information from the Birdeye API.
         @see https://docs.birdeye.so/reference/get-defi-token_security
+
+        Args:
+            mint_address (str): The mint address of the token.
+
+        Returns:
+            Optional[dict]: The security data, or None on failure.
         """
         data = self._birdeye_fetch("defi/token_security", {"address": mint_address})
         return data.get("data") if data.get("success") else None
 
-    def _birdeye_get_token_supply(self, mint_address: str) -> float:
+    def _birdeye_get_token_overview(self, mint_address: str) -> Optional[dict]:
         """
-        Get the token supply information from the Birdeye API.
+        Get the token overview information from the Birdeye API.
+        @see https://docs.birdeye.so/reference/get-defi-token_overview
+
+        Args:
+            mint_address (str): The mint address of the token.
+        
+        Returns:
+            Optional[dict]: The overview data, or None on failure.
         """
-        be_token_security = self._birdeye_get_token_security(mint_address)
-        if not be_token_security:
-            return 0
-        return float(be_token_security.get("totalSupply", 0) or 0)
+        data = self._birdeye_fetch("defi/token_overview", {"address": mint_address})
+        return data.get("data") if data.get("success") else None
 
     def _birdeye_get_pair_overview(self, pair_address: str) -> Optional[dict]:
         """
         Get the overview information for a specific trading pair from the Birdeye API.
         @see https://docs.birdeye.so/reference/get-defi-v3-pair-overview-single
+        
+        Args:
+            pair_address (str): The liquidity pool / pair address.
+            
+        Returns:
+            Optional[dict]: The pair overview data, or None on failure.
         """
         data = self._birdeye_fetch(
             "defi/v3/pair/overview/single",
@@ -398,6 +607,12 @@ class SolanaTokenSummary:
         """
         Get the wallet overview information for a specific wallet from the Birdeye API.
         @see https://docs.birdeye.so/reference/get-wallet-v2-net-worth-details
+        
+        Args:
+            wallet_address (str): The public key of the wallet.
+        
+        Returns:
+            Optional[dict]: The wallet overview data, or None on failure.
         """
         data = self._birdeye_fetch(
             "wallet/v2/net-worth-details",
@@ -410,8 +625,33 @@ class SolanaTokenSummary:
             return None
         return data["data"]
 
+    def _birdeye_get_token_supply(self, mint_address: str) -> float:
+        """
+        Get the token supply information from the Birdeye API.
+        
+        Args:
+            mint_address (str): The mint address of the token.
+            
+        Returns:
+            float: The total token supply.
+        """
+        be_token_security = self._birdeye_get_token_security(mint_address)
+        if not be_token_security:
+            return 0
+        return float(be_token_security.get("totalSupply", 0) or 0)
+    
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _birdeye_fetch(self, method: str, params: dict) -> dict:
+        """
+        Fetches data from the Birdeye API with authentication.
+        
+        Args:
+            method (str): The API method/endpoint (e.g., "defi/token_security").
+            params (dict): The query parameters for the request.
+            
+        Returns:
+            dict: The JSON response, or an empty dictionary on error.
+        """
         url = f"https://public-api.birdeye.so/{method}"
         headers = {
             "x-chain": "solana",
@@ -431,9 +671,9 @@ class SolanaTokenSummary:
     # --------------------------
     
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
-    def _solscan_estimate_wallet_age(self,  wallet_address: str) -> Optional[int]:
+    def _solscan_estimate_wallet_age(self, wallet_address: str) -> Optional[int]:
         """
-        Estimate the wallet age based on its metadata.
+        Estimates the wallet age based on its metadata from Solscan.
         
         Args:
             wallet_address (str): The wallet address.
@@ -452,13 +692,13 @@ class SolanaTokenSummary:
     @cache_handler.cache(ttl_s=MINUTE_IN_SECONDS * 2)
     def _solscan_get_wallet_metadata(self, wallet_address: str) -> Optional[dict]:
         """
-        Get account metadata from Solscan.
+        Gets account metadata from the Solscan Pro API.
 
         Args:
             wallet_address (str): The wallet address.
 
         Returns:
-            Optional[dict]: Wallet metadata or None if not found.
+            Optional[dict]: Wallet metadata, or None if not found.
         """
         data = self._solscan_fetch(
             "account/metadata",
@@ -475,7 +715,7 @@ class SolanaTokenSummary:
             page_size: int = 100
         ) -> Optional[List[dict]]:
         """
-        Get the pools created by a wallet.
+        Gets the pools created by a wallet from the Solscan Pro API.
 
         Args:
             wallet_address (str): The wallet address.
@@ -504,7 +744,7 @@ class SolanaTokenSummary:
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _solscan_fetch(self, method: str, params: dict = None) -> dict:
         """
-        Fetch data from the Solscan Pro API.
+        Fetches data from the Solscan Pro API with authentication.
         @see https://pro-api.solscan.io/pro-api-docs/v2.0
 
         Args:
@@ -512,7 +752,7 @@ class SolanaTokenSummary:
             params (dict, optional): Query parameters.
 
         Returns:
-            dict: The JSON response, or {} if error.
+            dict: The JSON response, or {} on error.
         """
         url = f"https://pro-api.solscan.io/v2.0/{method}"
         headers = {
@@ -533,64 +773,65 @@ class SolanaTokenSummary:
     # Aggregated Info
     # --------------------------
     
-    # @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_token_summary(
         self, 
         mint_address: str, 
         pair_address: str
     ) -> dict[str, Any]:
         """
-        Retrieve token summary and security overview from Birdeye & Dexscreener.
+        Retrieves a comprehensive summary of a Solana token by aggregating data
+        from multiple sources (Birdeye, Dexscreener, RugCheck, Solscan).
 
         Args:
             mint_address (str): The mint address of the token to analyze.
-            pair_address (str): The liquidity pool / pair address for price & volume info.
+            pair_address (str): The liquidity pool / pair address for price and
+                volume information.
 
         Returns:
-            dict: A dictionary containing token security, liquidity, 
-                price, holder concentration, and extra data.
+            dict: A dictionary containing various security, liquidity, market,
+                and creator wallet metrics.
         """
         
-        # -- Birdeye data
+        # ================
+        # Birdeye data
+        # ================
         be_token_security = self._birdeye_get_token_security(mint_address)
-        if not be_token_security:
-            return {"error": "Token security info not found"}
+        be_token_overview = self._birdeye_get_token_overview(mint_address)
+        be_pool_overview = self._birdeye_get_pair_overview(pair_address)
 
-        be_overview = self._birdeye_get_pair_overview(pair_address)
-        if not be_overview:
-            return {"error": "Pair overview not found"}
+        be_creator_address = be_token_security.get("creatorAddress", "")
+        be_wallet_overview = self._birdeye_get_wallet_overview(be_creator_address)
 
-        creator_address = be_token_security.get("creatorAddress", "")
-        be_wallet_overview = self._birdeye_get_wallet_overview(creator_address)
-        if not be_wallet_overview:
-            return {"error": "Wallet overview not found"}
-
-        # Calculate BurntPercent-like metric
-        be_total_token_supply = float(be_token_security.get("totalSupply", 0) or 0)
-        be_top10 = float(be_token_security.get("top10HolderBalance", 0) or 0)
-        be_creator = float(be_token_security.get("creatorBalance", 0) or 0)
-        be_owner = float(be_token_security.get("ownerBalance", 0) or 0)
-        be_held = be_top10 + be_creator + be_owner
-        be_top_holders_percent = round(max((be_total_token_supply - be_held) / be_total_token_supply * 100, 0), 2) if be_total_token_supply > 0 else 0.0
+        be_total_token_supply = be_token_security.get("totalSupply", 0)
         
-        # -- Dexscreener data
+        be_metadata = be_token_overview.get("extensions", {})
+        be_token_meta = {
+            "website": be_metadata.get("website", ""),
+            "twitter": be_metadata.get("twitter", ""),
+            "discord": be_metadata.get("discord", ""),
+        }
+        be_token_meta = {k: v for k, v in be_token_meta.items() if v}
+
+        be_token_price_usd = be_token_overview.get("price", 0)
+        be_lp_liquidity_usd = be_pool_overview.get("liquidity", 0)
+        be_lp_liquidity_tokens = be_lp_liquidity_usd / be_token_price_usd if be_token_price_usd else 0
+
+        # ================
+        # Dexscreener data
+        # ================
         dexscreener_pair_info = self._dexscreener_get_token_pair_info(mint_address, pair_address) or {}
 
-        # Parse Dexscreener values safely
+        # Parse values
         dex_liquidity = dexscreener_pair_info.get("liquidity", {})
         dex_liquidity_usd = float(dex_liquidity.get("usd") or 0)
-        dex_liquidity_tokens = float(dex_liquidity.get("base") or 0)
+        dex_lp_tokens = float(dex_liquidity.get("base") or 0)
         dex_price_change = dexscreener_pair_info.get("priceChange", {})
-        dex_pair_market_cap = dexscreener_pair_info.get("marketCap", {})
+        dex_token_market_cap_usd = float(dexscreener_pair_info.get("marketCap", 0))
 
-        # Add liquidity ratio checks
-        fdv = float(dexscreener_pair_info.get("fdv") or 0)
-        liquidity_usd_dex = float(dex_liquidity.get("usd") or 0)
-
-        # Token age
-        pair_created_at = dexscreener_pair_info.get("pairCreatedAt")
-
-        # -- RUG CHECK
+        # ================
+        # RUG CHECK data
+        # ================
         rc_token_info = self._rugcheck_get_token_info(mint_address)
         rc_pair_info = self._rugcheck_get_market_data(mint_address, pair_address)
         
@@ -599,51 +840,55 @@ class SolanaTokenSummary:
         rc_risks = self._rugcheck_get_token_risks(mint_address)
         rc_mint_authority = self._rugcheck_check_mint_authority(mint_address)
         rc_is_mutable = self._rugcheck_check_is_mutable(mint_address)
-        rc_is_freezable = self._rugcheck_check_freeze_authority(mint_address)
         rc_lp_locked = self._rugcheck_get_liquidity_locked(mint_address, pair_address)
-
         rc_pool_token_supply = rc_pair_info.get("lp", {}).get("tokenSupply", 0)
-        _log(f"RC Pool Token Supply", rc_pair_info)
-        rc_total_token_holders = rc_token_info.get("totalHolders", 0)
 
-        # -- Solscan
-        wallet_metadata = self._solscan_get_wallet_metadata(creator_address)
+        # ================
+        # SolScan data
+        # ================
+        wallet_metadata = self._solscan_get_wallet_metadata(be_creator_address)
         wallet_funded_by = wallet_metadata.get("funded_by", {}).get("funded_by", "UNKNOWN")
-        wallet_age = self._solscan_estimate_wallet_age(creator_address)
-        creator_created_pools = self._solscan_get_wallet_created_pools(creator_address)
+        wallet_age = self._solscan_estimate_wallet_age(be_creator_address)
+        creator_created_pools = self._solscan_get_wallet_created_pools(be_creator_address)
 
         # -- Aggregate response
         return {
             "token_symbol": token_symbol,
             "mint_address": mint_address,
             "pair_address": pair_address,
-
-            #-- RUG CHECK data
+            "description": be_token_overview.get("extensions", {}).get("description", ""),
+            
+            # ================
+            # RUG CHECK
+            # ================
             "rc_risk_score": rc_score,
             "rc_risks_desc": rc_risks,
             "rc_mint_authority": rc_mint_authority,
             "rc_is_mutable": rc_is_mutable,
-            "rc_is_freezeable": rc_is_freezable,
+            "rc_is_freezeable": rc_is_freezeable,
             "rc_liquidity_locked_tokens": rc_lp_locked,
             "rc_is_liquidity_locked": True if rc_lp_locked else False,
-            "rc_total_token_holders": rc_total_token_holders,
             "rc_pool_token_supply": rc_pool_token_supply,
 
-            # -- Solscan
+            # ================
+            # SolScan
+            # ================
             "ss_creator_wallet_funded_by": wallet_funded_by,
             "ss_creator_wallet_age_days": wallet_age,
             "ss_creator_pools_created": len(creator_created_pools) if creator_created_pools else 0,
 
-            # -- Birdeye
+            # ================
+            # Birdeye
+            # ================
             
-            # Security & Creator info (Birdeye)
-            "be_top10_holders_plus_creator_percentage": be_top_holders_percent,
+            # Security
             "be_top10_holder_percentage": round(float(be_token_security.get("top10HolderPercent", 0)) * 100, 2), #  Pool
             "be_token_creation_tx": be_token_security.get("creationTx"),
-            "be_token_creation_date": Utils.to_date_string(be_token_security.get("creationTime")),
+            "be_token_creation_time": Utils.to_date_string(be_token_security.get("creationTime")),
             "be_token_mint_tx": be_token_security.get("mintTx"),
             "be_token_mint_date": Utils.to_date_string(be_token_security.get("mintTime")),
             "be_token_total_supply": be_total_token_supply,
+            "be_token_holders": be_token_overview.get("holder"),
             "be_mutable_metadata": be_token_security.get("mutableMetadata"),
             "be_freezeable": be_token_security.get("freezeable") is not None,
             "be_freeze_authority": be_token_security.get("freezeAuthority") is not None,
@@ -656,43 +901,42 @@ class SolanaTokenSummary:
             "be_creator_percentage": float(be_token_security.get("creatorPercentage", 0) or 0),
             "be_creator_address": be_token_security.get("creatorAddress"),
             "be_creator_net_worth_usd": float(be_wallet_overview.get("net_worth", 0) or 0),
+            
+            # Extensions
+            "be_metadata": be_token_meta,
 
             # Pair / Market info
-            "be_liquidity_pool_usd": be_overview.get("liquidity"),
-            "be_price_usd": be_overview.get("price"),
-            "be_traded_volume_24h_usd": be_overview.get("volume_24h"),
-            "be_unique_traders_24h": be_overview.get("unique_wallet_24h"),
+            "be_pool_source": be_pool_overview.get("source") or 0,
+            "be_token_price_usd": be_token_price_usd,
+            "be_pool_creation_time": Utils.to_date_string(be_pool_overview.get("created_at", "")),
+            "be_liquidity_pool_usd": be_lp_liquidity_usd,
+            # "be_price_usd": be_overview.get("price"),
+            "be_traded_volume_24h_usd": be_pool_overview.get("volume_24h"),
+            "be_unique_traders_24h": be_pool_overview.get("unique_wallet_24h"),
+            # "be_mc_usd": be_token_overview.get("marketCap"),
+            # "be_fdv": be_token_overview.get("fdv"),
 
-            # -- Dexscreener
+            # ================
+            # Dexscreener data
+            # ================
             
-            # "dex_price_usd": dexscreener_info.get("priceUsd"),
-            # "dex_liquidity_pool_usd": dex_liquidity_usd,
-            "dex_liquidity_pool_tokens": dex_liquidity_tokens,
-            "dex_fdv": fdv,
-            "dex_current_pool_mc": dex_pair_market_cap,
-            # "dex_liq_fdv_ratio": liq_fdv_ratio,
-            "dex_pool_age_days": Utils.get_days_since(int(pair_created_at / 1000)),
+            "dex_price_usd": dexscreener_pair_info.get("priceUsd"),
+            "dex_liquidity_pool_usd": dex_liquidity_usd,
+            "dex_liquidity_pool_tokens": dex_lp_tokens,
+            "dex_fdv": float(dexscreener_pair_info.get("fdv") or 0),
+            "dex_mc_usd": dex_token_market_cap_usd,
 
-            "cl_pool_supply_token_percentage": round((dex_liquidity_tokens / be_total_token_supply * 100), 2),
+            "cl_pool_supply_token_percentage": round((dex_lp_tokens / be_total_token_supply * 100), 2),
             
-            # Volume & Transaction momentum
+            # Volume momentum
             "dex_volume_h24": dexscreener_pair_info.get("volume", {}).get("h24"),
             "dex_volume_h6": dexscreener_pair_info.get("volume", {}).get("h6"),
             "dex_volume_h1": dexscreener_pair_info.get("volume", {}).get("h1"),
             "dex_volume_m5": dexscreener_pair_info.get("volume", {}).get("m5"),
 
-            # "dex_txns_m5": dex_txns.get("m5"),
-            # "dex_txns_h1": dex_txns.get("h1"),
-            # "dex_txns_h6": dex_txns.get("h6"),
-            # "dex_txns_h24": dex_txns.get("h24"),
-
             # Price momentum
             "dex_price_change_h6": dex_price_change.get("h6"),
             "dex_price_change_h24": dex_price_change.get("h24"),
-
-            # Optional metadata
-            "dex_socials": dexscreener_pair_info.get("info", {}).get("socials"),
-            "dex_websites": dexscreener_pair_info.get("info", {}).get("websites")
         }
 
     def get_token_summary_df(
@@ -701,15 +945,19 @@ class SolanaTokenSummary:
         pair_address: str
     ) -> pd.DataFrame:
         """
-        Get token summary as a pandas DataFrame.
+        Retrieves the token summary and returns it as a pandas DataFrame.
+
+        This method is a wrapper around `get_token_summary` to format the
+        output for easier data manipulation and analysis.
 
         Args:
             mint_address (str): The mint address of the token.
             pair_address (str): The pair / liquidity pool address.
 
         Returns:
-            pd.DataFrame: DataFrame with a single row containing token summary info.
-                        If an error occurs, returns a DataFrame with an 'error' column.
+            pd.DataFrame: A DataFrame with a single row containing the token
+                summary info. If an error occurs, it returns a DataFrame
+                with an 'error' column.
         """
         status = self.get_token_summary(mint_address, pair_address)
         if "error" in status:
