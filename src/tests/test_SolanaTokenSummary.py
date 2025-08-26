@@ -38,10 +38,11 @@ def test_rpc_get_largest_accounts():
 
 def test_rpc_get_wallet_age():
     solana = SolanaTokenSummary()
-    wallet_age = solana._rpc_estimate_wallet_age(TEST_WALLET_ADDRESS)
+    wallet_age = solana._rpc_estimate_wallet_ages([TEST_WALLET_ADDRESS])
     _log("RPC Wallet Age:", wallet_age)
-    assert isinstance(wallet_age, int)
-    assert wallet_age > 23
+    assert isinstance(wallet_age, list)
+    assert len(wallet_age) == 1
+    assert wallet_age[0] > 23
 
 ## Birdeye
 

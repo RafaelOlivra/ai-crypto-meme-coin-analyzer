@@ -6,6 +6,11 @@ from requests.exceptions import RequestException
 from datetime import datetime, timezone
 from typing import Optional, Any, List
 
+# Add aiohttp and asyncio for asynchronous operations
+import aiohttp
+import asyncio
+
+# Assuming these modules exist in your project
 from services.AppData import AppData
 from lib.LocalCache import cache_handler
 from lib.Utils import Utils
@@ -19,6 +24,7 @@ DAYS_IN_SECONDS = 24 * 60 * 60
 class SolanaTokenSummary:
     """
     Retrieves Solana token summary from multiple sources.
+    This class supports both synchronous and asynchronous RPC calls.
     """
     def __init__(self, rpc_endpoints: Optional[list] = None):
 
@@ -33,8 +39,13 @@ class SolanaTokenSummary:
             self.rpc_endpoints = endpoints
         else:
             raise ValueError("rpc_endpoints must be a URL string or list")
-         
+        
+        # Synchronous session for standard methods
         self.session = requests.Session()
+        
+        # Asynchronous session for high-performance methods
+        self._async_session = None
+
         self.birdeye_api_key = AppData().get_api_key("birdeye_api_key")
         self.solscan_api_key = AppData().get_api_key("solscan_api_key")
         self.instance_id = Utils.hash(self.rpc_endpoints) # For caching
@@ -50,7 +61,7 @@ class SolanaTokenSummary:
             return data["result"]["value"]["data"]["parsed"]["info"]
         except (KeyError, TypeError):
             return None
-
+        
     @cache_handler.cache(ttl_s=MINUTE_IN_SECONDS)
     def _rpc_get_token_supply(self, mint_address: str) -> int:
         data = self._rpc_fetch("getTokenSupply", [mint_address])
@@ -58,6 +69,7 @@ class SolanaTokenSummary:
             return int(data["result"]["value"]["uiAmount"])
         except (KeyError, TypeError):
             return 0
+    
     @cache_handler.cache(ttl_s=MINUTE_IN_SECONDS)
     def _rpc_get_largest_accounts(self, mint_address: str) -> List[dict]:
         data = self._rpc_fetch("getTokenLargestAccounts", [mint_address])
@@ -65,18 +77,64 @@ class SolanaTokenSummary:
             return data["result"]["value"]
         except (KeyError, TypeError):
             return []
-
+        
+    def _rpc_check_nomint(self, mint_info: dict) -> bool:
+        return mint_info.get("mintAuthority") is None
+    
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def _rpc_estimate_wallet_age(self, wallet_address: str) -> int:
         """
-        Get the wallet age (days since first transaction).
+        Estimate the wallet age for a single wallet address.
+
+        Args:
+            wallet_address (str): The wallet address to check.
+
+        Returns:
+            int: The estimated age of the wallet in days, or -1 if not found.
+        """
+        try:
+            age = self._rpc_estimate_wallet_ages([wallet_address])[0]
+        except IndexError:
+            age = -1
+        return age
+    
+
+    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
+    def _rpc_estimate_wallet_ages(self, wallet_addresses: List[str]) -> List[int]:
+        """
+        Estimate the age for a list of wallets concurrently.
+        This function creates tasks and runs the asyncio event loop.
+
+        Args:
+            wallet_addresses (List[str]): The wallet addresses to check.
+
+        Returns:
+            List[int]: A list of estimated ages for each wallet in days, or -1 if not found.
+        """
+        tasks = [
+            self._rpc_estimate_wallet_age_async(wallet)
+            for wallet in wallet_addresses
+        ]
+        results = asyncio.run(self._rpc_run_async_tasks(tasks))
+        return results
+
+    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
+    async def _rpc_estimate_wallet_age_async(self, wallet_address: str) -> int:
+        """
+        Asynchronously get the wallet age (days since first transaction).
+
+        Args:
+            wallet_address (str): The wallet address to check.
+
+        Returns:
+            int: The estimated age of the wallet in days, or -1 if not found.
         """
         before: Optional[str] = None
         oldest_sig: Optional[str] = None
 
         # Page through until we hit the oldest tx
         while True:
-            data = self._rpc_fetch(
+            data = await self._rpc_fetch_async(
                 "getSignaturesForAddress",
                 [wallet_address, {"limit": 1000, "before": before}]
             )
@@ -95,7 +153,7 @@ class SolanaTokenSummary:
             return -1
 
         # Fetch transaction details to get blockTime
-        tx_data = self._rpc_fetch("getTransaction", [oldest_sig, {"encoding": "json"}])
+        tx_data = await self._rpc_fetch_async("getTransaction", [oldest_sig, {"encoding": "json"}])
         tx = tx_data.get("result", {})
         block_time = tx.get("blockTime")
 
@@ -107,14 +165,12 @@ class SolanaTokenSummary:
         age_days = (now - first_tx_time).days
 
         return age_days
-
-    def _rpc_check_nomint(self, mint_info: dict) -> bool:
-        return mint_info.get("mintAuthority") is None
     
     @cache_handler.cache(ttl_s=RPC_CACHE_TTL)
     def _rpc_fetch(self, method: str, params: list) -> dict:
         """
         Fetches data from a random Solana RPC endpoint with retry logic.
+        (Synchronous version for compatibility)
         """
         max_retries = 3
         for attempt in range(max_retries):
@@ -145,9 +201,79 @@ class SolanaTokenSummary:
         _log(f"All {max_retries} attempts failed for method {method}.", level="ERROR")
         return {}
     
+    @cache_handler.cache(ttl_s=RPC_CACHE_TTL)
+    async def _rpc_fetch_async(self, method: str, params: list) -> dict:
+        """
+        Fetches data from multiple Solana RPC endpoints concurrently.
+        (Asynchronous version for performance)
+        
+        Args:
+            method (str): The RPC method to call.
+            params (list): The parameters to pass to the RPC method.
+        """
+        tasks = []
+        async with aiohttp.ClientSession() as session:
+            for rpc_url in self.rpc_endpoints:
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": method,
+                    "params": params
+                }
+                tasks.append(
+                    asyncio.create_task(
+                        session.post(rpc_url, json=payload, timeout=10)
+                    )
+                )
+
+            done, pending = await asyncio.wait(
+                tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+                timeout=10
+            )
+            
+            # Cancel all other pending tasks immediately
+            for task in pending:
+                task.cancel()
+            
+            # Check for a successful response and return it
+            for task in done:
+                try:
+                    response = await task
+                    response.raise_for_status()
+                    return await response.json()
+                except Exception:
+                    continue
+        
+        _log(f"All async attempts failed for method {method}.", level="ERROR")
+        return {}
+    
+    async def _rpc_run_async_tasks(self, tasks: List) -> List[int]:
+        """
+        Helper to run the main async tasks.
+
+        Args:
+            tasks (List): A list of async tasks to run.
+
+        Returns:
+            List[int]: A list of results or -1 for failed tasks.
+        """
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Handle exceptions gracefully
+        task_results = []
+        for result in results:
+            if isinstance(result, Exception):
+                _log(f"Error processing wallet: {result}", level="ERROR")
+                task_results.append(-1)
+            else:
+                task_results.append(result)
+        return task_results
+
     # --------------------------
     # RUG CHECK Info
     # --------------------------
+    
     def _rugcheck_get_token_info(self, mint_address: str) -> Optional[dict]:
         return self._rugcheck_fetch(mint_address)
 
@@ -379,6 +505,7 @@ class SolanaTokenSummary:
     def _solscan_fetch(self, method: str, params: dict = None) -> dict:
         """
         Fetch data from the Solscan Pro API.
+        @see https://pro-api.solscan.io/pro-api-docs/v2.0
 
         Args:
             method (str): The API method/endpoint (relative to base URL).
@@ -386,7 +513,6 @@ class SolanaTokenSummary:
 
         Returns:
             dict: The JSON response, or {} if error.
-        @see https://pro-api.solscan.io/pro-api-docs/v2.0
         """
         url = f"https://pro-api.solscan.io/v2.0/{method}"
         headers = {
