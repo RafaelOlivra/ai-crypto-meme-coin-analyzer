@@ -10,11 +10,9 @@ DEFAULT_CACHE_TTL = 60
 
 class AppData:
     """
-    A class to handle data storage and retrieval from configuration files and environment variables.
-
     This class provides methods for managing configuration data, API keys, and various types of
-    application data (e.g., trip data, attractions). It supports CRUD operations on JSON files
-    and interacts with environment variables for secure storage of API keys.
+    application data.
+    It also handles data storage and retrieval from configuration files and environment variables.
     """
 
     def __init__(self):
