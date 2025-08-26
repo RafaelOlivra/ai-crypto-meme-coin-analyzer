@@ -533,7 +533,7 @@ class SolanaTokenSummary:
     # Aggregated Info
     # --------------------------
     
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    # @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def get_token_summary(
         self, 
         mint_address: str, 
@@ -592,6 +592,8 @@ class SolanaTokenSummary:
 
         # -- RUG CHECK
         rc_token_info = self._rugcheck_get_token_info(mint_address)
+        rc_pair_info = self._rugcheck_get_market_data(mint_address, pair_address)
+        
         token_symbol = rc_token_info.get("tokenMeta", {}).get("symbol", "")
         rc_score = rc_token_info.get("score_normalised", 0)
         rc_risks = self._rugcheck_get_token_risks(mint_address)
@@ -599,6 +601,9 @@ class SolanaTokenSummary:
         rc_is_mutable = self._rugcheck_check_is_mutable(mint_address)
         rc_is_freezable = self._rugcheck_check_freeze_authority(mint_address)
         rc_lp_locked = self._rugcheck_get_liquidity_locked(mint_address, pair_address)
+
+        rc_pool_token_supply = rc_pair_info.get("lp", {}).get("tokenSupply", 0)
+        _log(f"RC Pool Token Supply", rc_pair_info)
         rc_total_token_holders = rc_token_info.get("totalHolders", 0)
 
         # -- Solscan
@@ -622,6 +627,7 @@ class SolanaTokenSummary:
             "rc_liquidity_locked_tokens": rc_lp_locked,
             "rc_is_liquidity_locked": True if rc_lp_locked else False,
             "rc_total_token_holders": rc_total_token_holders,
+            "rc_pool_token_supply": rc_pool_token_supply,
 
             # -- Solscan
             "ss_creator_wallet_funded_by": wallet_funded_by,
@@ -652,7 +658,7 @@ class SolanaTokenSummary:
             "be_creator_net_worth_usd": float(be_wallet_overview.get("net_worth", 0) or 0),
 
             # Pair / Market info
-            # "be_liquidity_pool_usd": be_overview.get("liquidity"),
+            "be_liquidity_pool_usd": be_overview.get("liquidity"),
             "be_price_usd": be_overview.get("price"),
             "be_traded_volume_24h_usd": be_overview.get("volume_24h"),
             "be_unique_traders_24h": be_overview.get("unique_wallet_24h"),
@@ -660,7 +666,7 @@ class SolanaTokenSummary:
             # -- Dexscreener
             
             # "dex_price_usd": dexscreener_info.get("priceUsd"),
-            "dex_liquidity_pool_usd": dex_liquidity_usd,
+            # "dex_liquidity_pool_usd": dex_liquidity_usd,
             "dex_liquidity_pool_tokens": dex_liquidity_tokens,
             "dex_fdv": fdv,
             "dex_current_pool_mc": dex_pair_market_cap,
@@ -688,7 +694,6 @@ class SolanaTokenSummary:
             "dex_socials": dexscreener_pair_info.get("info", {}).get("socials"),
             "dex_websites": dexscreener_pair_info.get("info", {}).get("websites")
         }
-
 
     def get_token_summary_df(
         self, 
