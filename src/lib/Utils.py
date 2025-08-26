@@ -156,9 +156,18 @@ class Utils:
     # --------------------------
     
     @staticmethod
-    def formatted_date(_date: date | datetime | str | int | None = None, format: str = "", delta_seconds: int = 0) -> str:
+    def formatted_date(
+            _date: date | datetime | str | int | None = None,
+            format: str = "",
+            delta_seconds: int = 0
+        ) -> str:
         """
         Get the current date in a specific format.
+
+        Args:
+            _date (date | datetime | str | int | None): The date to format.
+            format (str, optional): The format to use. Defaults to "".
+            delta_seconds (int, optional): A time delta in seconds to add to the date. Defaults to 0.
 
         Returns:
             str: The current date as a formatted string.
@@ -261,7 +270,8 @@ class Utils:
         If the conversion fails, the date is assumed to be in the 'datetime_display_format' config format.
 
         Args:
-            _date (str | date): The date string to convert.
+            _date (str | date | datetime | int): The date to convert.
+            format (str, optional): The format to use for parsing the date. Defaults to "".
 
         Returns:
             datetime: The datetime object.
