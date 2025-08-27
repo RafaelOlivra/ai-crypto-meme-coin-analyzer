@@ -66,6 +66,13 @@ def test_birdeye_get_token_supply():
     _log("Token supply:", token_supply)
     assert isinstance(token_supply, float)
     assert token_supply > 0
+    
+def test_birdeye_get_mint_from_pair():
+    solana = SolanaTokenSummary()
+    mint_address = solana._birdeye_get_mint_from_pair(TEST_TOKEN_POOL)
+    _log("Mint Address from Pair:", mint_address)
+    assert isinstance(mint_address, str)
+    assert mint_address == TEST_TOKEN_ADDRESS
 
 ## Solscan
 

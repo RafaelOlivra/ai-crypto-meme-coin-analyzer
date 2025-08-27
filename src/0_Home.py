@@ -28,13 +28,14 @@ def Home():
     
     st.title("🐸 Meme Coin Analyzer Concept")
     
-    col1, col2 = st.columns([8, 2])
+    col_token_selector, col_refresh, sep, col_custom_pair = st.columns([4, 2, .5, 4])
     
-    with col2:
+    with col_refresh:
+        st.write("######")
         if st.button("Refresh Tokens", use_container_width=True):
             app_data.clear_state("latest_tokens")
 
-    with col1:
+    with col_token_selector:
         # Get latest meme coins from BitQuery
         coins = app_data.get_state("latest_tokens")
         if not coins:
@@ -88,8 +89,20 @@ def Home():
         current_latest_token = st.selectbox("Select a token", options=list(addresses.keys()), index=index)
         app_data.set_state("current_latest_token", current_latest_token)
 
-    token = addresses[current_latest_token]["mint"]
-    pair_address = addresses[current_latest_token]["pair"]
+    sep.write()
+    
+    with col_custom_pair:
+        pair_address = st.text_input("Or Inform Pair (Pool) Address", value=app_data.get_state("custom_pair_address") or "")
+        if pair_address != "":
+            app_data.set_state("custom_pair_address", pair_address)
+            token = solana._birdeye_get_mint_from_pair(pair_address)
+        else:
+            token = addresses[current_latest_token]["mint"]
+            pair_address = addresses[current_latest_token]["pair"]
+            
+    if not token or not pair_address:
+        st.error("Token or Pair address is missing or invalid.")
+        return
 
     st.markdown("### Token Summary (Aggregator)")
     df_sol_status = solana.get_token_summary_df(token, pair_address)

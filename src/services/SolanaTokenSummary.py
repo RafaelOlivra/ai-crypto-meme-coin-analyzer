@@ -623,10 +623,30 @@ class SolanaTokenSummary:
         """
         be_token_security = self._birdeye_get_token_security(mint_address)
         if not be_token_security:
-            return 0
+            return None
         return float(be_token_security.get("totalSupply", 0) or 0)
-    
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+
+    def _birdeye_get_mint_from_pair(self, pair_address: str) -> Optional[str]:
+        """
+        Get the mint address from a trading pair address using the Birdeye API.
+
+        Args:
+            pair_address (str): The trading pair address.
+
+        Returns:
+            Optional[str]: The mint address, or None if not found.
+        """
+        pair_overview = self._birdeye_get_pair_overview(pair_address)
+        if not pair_overview:
+            return None
+
+        pair_name = pair_overview.get("name", "")
+        if pair_name.startswith("SOL-"):
+            return pair_overview.get("quote", {}).get("address", "")
+        else:
+            return pair_overview.get("base", {}).get("address", "")
+
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return={})
     def _birdeye_fetch(self, method: str, params: dict) -> dict:
         """
         Fetches data from the Birdeye API with authentication.
@@ -920,7 +940,7 @@ class SolanaTokenSummary:
             "dex_fdv": float(dexscreener_pair_info.get("fdv") or 0),
             "dex_mc_usd": dex_token_market_cap_usd,
 
-            "cl_unlocked_lp_token_supply_percentage": round((dex_lp_tokens / be_total_token_supply * 100), 2),
+            "cl_unlocked_lp_supply_percentage": round((dex_lp_tokens / be_total_token_supply * 100), 2),
             
             # Volume momentum
             "dex_volume_h24": dexscreener_pair_info.get("volume", {}).get("h24"),
