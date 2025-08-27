@@ -920,7 +920,7 @@ class SolanaTokenSummary:
             "dex_fdv": float(dexscreener_pair_info.get("fdv") or 0),
             "dex_mc_usd": dex_token_market_cap_usd,
 
-            "cl_unlocked_lp_supply_token_percentage": round((dex_lp_tokens / be_total_token_supply * 100), 2),
+            "cl_unlocked_lp_token_supply_percentage": round((dex_lp_tokens / be_total_token_supply * 100), 2),
             
             # Volume momentum
             "dex_volume_h24": dexscreener_pair_info.get("volume", {}).get("h24"),
