@@ -1,5 +1,7 @@
 google-generativeai
 httpx
+aiohttp
+asyncio
 limits
 openai
 pandas==2.2.2
