@@ -261,10 +261,10 @@ class CoinTrainingDataPrep:
             os.makedirs(storage_dir)
 
         if not replace and os.path.exists(os.path.join(storage_dir, filename)):
-            _log(f"File {filename} already exists. Skipping save.")
             return
 
         data.to_parquet(os.path.join(storage_dir, filename), index=False)
+        _log(f"File {filename} saved successfully.")
 
     def hash_dataframe(self, df: pd.DataFrame) -> str:
         """
