@@ -862,7 +862,7 @@ class SolanaTokenSummary:
             "rc_is_freezable": rc_is_freezable,
             "rc_liquidity_locked_tokens": rc_lp_locked,
             "rc_is_liquidity_locked": True if rc_lp_locked else False,
-            "rc_pool_tokens_locked": rc_pool_tokens_locked,
+            "rc_lp_tokens_locked": rc_pool_tokens_locked,
 
             # ================
             # SolScan
