@@ -5,12 +5,11 @@ import pandas as pd
 from requests.exceptions import RequestException
 from datetime import datetime, timezone
 from typing import Optional, Any, List
+from collections import defaultdict
 
-# Add aiohttp and asyncio for asynchronous operations
 import aiohttp
 import asyncio
 
-# Assuming these modules exist in your project
 from services.AppData import AppData
 from lib.LocalCache import cache_handler
 from lib.Utils import Utils
@@ -128,6 +127,7 @@ class SolanaTokenSummary:
         """
         return mint_info.get("mintAuthority") is None
     
+    # --- New synchronous entry point for wallet age estimation ---
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def _rpc_estimate_wallet_age(self, wallet_address: str) -> int:
         """
@@ -141,18 +141,29 @@ class SolanaTokenSummary:
             int: The estimated age of the wallet in days, or -1 if not found.
         """
         try:
-            age = self._rpc_estimate_wallet_ages([wallet_address])[0]
-        except IndexError:
+            # We will use the new, optimized, parallel method even for a single wallet
+            # We call the new async entry point using asyncio.run()
+            ages = asyncio.run(self._rpc_estimate_wallet_ages_async([wallet_address]))
+            age = ages[0]
+        except (IndexError, RuntimeError) as e:
+            _log(f"Error estimating single wallet age: {e}", level="ERROR")
             age = -1
         return age
     
-
+    # --- New async entry point for wallet age estimation ---
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def _rpc_estimate_wallet_ages(self, wallet_addresses: List[str]) -> List[int]:
         """
-        Estimates the age for a list of wallets concurrently by finding their
-        first transaction. This function uses asyncio to perform the checks
-        in parallel.
+        A synchronous entry point to estimate the age of a list of wallets.
+        It starts and manages the asyncio event loop for the asynchronous task.
+        """
+        # Call the async function that does the real work.
+        return asyncio.run(self._rpc_estimate_wallet_ages_async(wallet_addresses))
+
+    async def _rpc_estimate_wallet_ages_async(self, wallet_addresses: List[str]) -> List[int]:
+        """
+        Estimates the age for a list of wallets concurrently by distributing
+        the requests across available RPC nodes to optimize cost.
 
         Args:
             wallet_addresses (List[str]): The wallet addresses to check.
@@ -161,21 +172,81 @@ class SolanaTokenSummary:
             List[int]: A list of estimated ages for each wallet in days, or -1
                 for wallets where the age could not be determined.
         """
+        rpc_batches = defaultdict(list)
+        
+        # Shuffle the wallet addresses to ensure an even and random distribution.
+        random.shuffle(wallet_addresses)
+
+        # Distribute the wallets evenly among the RPC nodes.
+        num_endpoints = len(self.rpc_endpoints)
+        if num_endpoints == 0:
+            _log("No RPC endpoints configured.", level="ERROR")
+            return [-1] * len(wallet_addresses)
+
+        for i, wallet in enumerate(wallet_addresses):
+            rpc_url = self.rpc_endpoints[i % num_endpoints]
+            rpc_batches[rpc_url].append(wallet)
+
+        # Create a list of tasks, where each task is a batch of requests for one RPC node.
         tasks = [
-            self._rpc_estimate_wallet_age_async(wallet)
-            for wallet in wallet_addresses
+            self._rpc_estimate_batch_ages_async(rpc_url, wallets_to_check)
+            for rpc_url, wallets_to_check in rpc_batches.items()
         ]
-        results = asyncio.run(self._rpc_run_async_tasks(tasks))
-        return results
+        
+        # Use asyncio.gather to run all the batch tasks concurrently.
+        all_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Flatten the list of results from all batches and handle exceptions.
+        final_results = []
+        for batch_result in all_results:
+            if isinstance(batch_result, Exception):
+                _log(f"Error processing a batch: {batch_result}", level="ERROR")
+                # Append a list of -1s to represent failure for that batch
+                final_results.extend([-1] * len(rpc_batches.values()))
+            else:
+                final_results.extend(batch_result)
+        
+        return final_results
+
+    async def _rpc_estimate_batch_ages_async(self, rpc_url: str, wallet_addresses: List[str]) -> List[int]:
+        """
+        Helper to run a batch of async tasks against a specific RPC node.
+        
+        Args:
+            rpc_url (str): The RPC endpoint to use for all requests in this batch.
+            wallet_addresses (List[str]): The list of wallet addresses for this batch.
+            
+        Returns:
+            List[int]: The list of ages for the processed wallets.
+        """
+        tasks = [
+            self._rpc_estimate_wallet_age_async(wallet_address, rpc_url=rpc_url)
+            for wallet_address in wallet_addresses
+        ]
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Handle exceptions for each individual task in the batch
+        task_results = []
+        for result in results:
+            if isinstance(result, Exception):
+                _log(f"Error processing wallet in batch: {result}", level="ERROR")
+                task_results.append(-1)
+            else:
+                task_results.append(result)
+                
+        return task_results
 
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
-    async def _rpc_estimate_wallet_age_async(self, wallet_address: str) -> int:
+    async def _rpc_estimate_wallet_age_async(self, wallet_address: str, rpc_url: Optional[str] = None) -> int:
         """
         Asynchronously gets the wallet age (days since first transaction) by
         paginating through transaction signatures.
 
         Args:
             wallet_address (str): The wallet address to check.
+            rpc_url (Optional[str]): The specific RPC URL to use. If None,
+                                      it defaults to the "race" logic.
 
         Returns:
             int: The estimated age of the wallet in days, or -1 if not found.
@@ -187,7 +258,8 @@ class SolanaTokenSummary:
         while True:
             data = await self._rpc_fetch_async(
                 "getSignaturesForAddress",
-                [wallet_address, {"limit": 1000, "before": before}]
+                [wallet_address, {"limit": 1000, "before": before}],
+                rpc_url=rpc_url  # Pass the specific URL to the fetch function
             )
             signatures = data.get("result", [])
             if not signatures:
@@ -204,7 +276,7 @@ class SolanaTokenSummary:
             return -1
 
         # Fetch transaction details to get blockTime
-        tx_data = await self._rpc_fetch_async("getTransaction", [oldest_sig, {"encoding": "json"}])
+        tx_data = await self._rpc_fetch_async("getTransaction", [oldest_sig, {"encoding": "json"}], rpc_url=rpc_url)
         tx = tx_data.get("result", {})
         block_time = tx.get("blockTime")
 
@@ -261,24 +333,44 @@ class SolanaTokenSummary:
         return {}
     
     @cache_handler.cache(ttl_s=RPC_CACHE_TTL)
-    async def _rpc_fetch_async(self, method: str, params: list) -> dict:
+    async def _rpc_fetch_async(self, method: str, params: list, rpc_url: Optional[str] = None) -> dict:
         """
-        Fetches data from multiple Solana RPC endpoints concurrently.
-        This asynchronous version is designed for high performance. It
-        sends requests to all available endpoints and returns the result
-        from the first one that responds successfully.
+        Fetches data from a specific Solana RPC endpoint or multiple concurrently.
+        This asynchronous version is designed for high performance. It can
+        send requests to a specific URL or, if none is provided, to all
+        available endpoints, returning the result from the first one that responds.
 
         Args:
             method (str): The RPC method to call.
             params (list): The parameters to pass to the RPC method.
+            rpc_url (Optional[str]): The specific RPC URL to use. If None,
+                                      it will use the old "race" logic.
 
         Returns:
             dict: The JSON response from the first successful RPC call,
                 or an empty dictionary on failure.
         """
-        tasks = []
-        async with aiohttp.ClientSession() as session:
-            for rpc_url in self.rpc_endpoints:
+        if rpc_url:
+            # Use a single, specified RPC URL
+            try:
+                # Use a session if it exists, otherwise create a new one for this call
+                if not self._async_session or self._async_session.closed:
+                    self._async_session = aiohttp.ClientSession()
+                
+                payload = { "jsonrpc": "2.0", "id": 1, "method": method, "params": params }
+                response = await self._async_session.post(rpc_url, json=payload, timeout=10)
+                response.raise_for_status()
+                return await response.json()
+            except Exception as e:
+                _log(f"RPC fetch failed for method {method} on {rpc_url}: {e}", level="ERROR")
+                return {}
+        else:
+            # Fallback to the original "race" logic if no URL is provided
+            tasks = []
+            if not self._async_session or self._async_session.closed:
+                self._async_session = aiohttp.ClientSession()
+                
+            for endpoint in self.rpc_endpoints:
                 payload = {
                     "jsonrpc": "2.0",
                     "id": 1,
@@ -287,7 +379,7 @@ class SolanaTokenSummary:
                 }
                 tasks.append(
                     asyncio.create_task(
-                        session.post(rpc_url, json=payload, timeout=10)
+                        self._async_session.post(endpoint, json=payload, timeout=10)
                     )
                 )
 
@@ -310,9 +402,9 @@ class SolanaTokenSummary:
                 except Exception:
                     continue
         
-        _log(f"All async attempts failed for method {method}.", level="ERROR")
-        return {}
-    
+            _log(f"All async attempts failed for method {method}.", level="ERROR")
+            return {}
+            
     async def _rpc_run_async_tasks(self, tasks: List) -> List[int]:
         """
         Helper to run a list of async tasks and handle exceptions.

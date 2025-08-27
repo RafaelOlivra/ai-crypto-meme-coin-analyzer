@@ -130,7 +130,7 @@ def test_rugcheck_get_token_risks():
     risks = solana._rugcheck_get_token_risks(token)
     _log("Risks:", risks)
     assert isinstance(risks, list)
-    assert "rugged tokens" in risks[0]
+    assert "Low Liquidity" in risks[0]
 
 def test_rugcheck_get_market_data():
     solana = SolanaTokenSummary()
