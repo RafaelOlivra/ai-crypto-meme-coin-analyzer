@@ -1,5 +1,8 @@
 import streamlit as st
 import json
+import pandas as pd
+import matplotlib.pyplot as plt
+
 from dotenv import load_dotenv, find_dotenv
 
 from services.AppData import AppData
@@ -103,14 +106,16 @@ def Home():
     if not token or not pair_address:
         st.error("Token or Pair address is missing or invalid.")
         return
+    
+    df_sol_summary = solana.get_token_summary_df(token, pair_address)
+    token_name = df_sol_summary.loc[0]['token_symbol']
+    st.markdown(f"# ℹ️ Token Overview: {token_name}")
 
     st.markdown("### Token Summary (Aggregator)")
-    df_sol_status = solana.get_token_summary_df(token, pair_address)
-
     # Convert any json cells to string
-    df_sol_status = df_sol_status.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
+    df_sol_summary = df_sol_summary.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
 
-    st.dataframe(df_sol_status.T.rename_axis("Agg Token Summary"), use_container_width=True)
+    st.dataframe(df_sol_summary.T.rename_axis("Agg Token Summary"), use_container_width=True)
 
     st.markdown("### Token Summary (BitQuery)")
     df_bitquery_summary = bitquery.get_token_pair_24h_summary_df(token, pair_address)
@@ -124,6 +129,75 @@ def Home():
 
     df_raw_training_data = CoinTrainingDataPrep().get_raw_pair_training_data(token, pair_address)
     st.dataframe(df_raw_training_data, use_container_width=True)
+    
+    
+  # Convert numeric cols
+    num_cols = ["bq_trade_amount_token", "bq_trade_priceinusd", "bq_transaction_feeinusd", "bq_mc_usd", "context_be_token_price_usd", "context_be_token_total_supply", "context_be_creator_net_worth_usd", "context_be_token_holders", "context_be_top10_holder_percentage", "context_be_liquidity_pool_usd", "context_dex_mc_usd"]
+    for col in num_cols:
+        if col in df_raw_training_data.columns:
+            df_raw_training_data[col] = pd.to_numeric(df_raw_training_data[col], errors="coerce")
+
+    # Add trade value USD
+    df_raw_training_data["trade_value_usd"] = df_raw_training_data["bq_trade_amount_token"] * df_raw_training_data["bq_trade_priceinusd"]
+
+    # ---- HEADER ----
+    st.markdown("# 📊 Token Analysis")
+
+    # ---- CONTEXT INFO ----
+    st.subheader("Token Context")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Risk Score", df_raw_training_data["context_rc_risk_score"].iloc[0])
+    col2.metric("Risk Desc", df_raw_training_data["context_rc_risks_desc"].iloc[0])
+    col3.metric("Creator Wallet Age (days)", df_raw_training_data["context_ss_creator_wallet_age_days"].iloc[0])
+
+    col4, col5, col6 = st.columns(3)
+    col4.metric("Total Token Supply", f"{df_raw_training_data['context_be_token_total_supply'].iloc[0]:,.0f}")
+    col5.metric("Holders", df_raw_training_data["context_be_token_holders"].iloc[0])
+    col6.metric("Top10 Holder %", f"{df_raw_training_data['context_be_top10_holder_percentage'].iloc[0]:.2f}%")
+
+    col7, col8, col9 = st.columns(3)
+    col7.metric("Liquidity Pool (USD)", f"${df_raw_training_data['context_be_liquidity_pool_usd'].iloc[0]:,.2f}")
+    col8.metric("Market Cap (USD)", f"${df_raw_training_data['context_dex_mc_usd'].iloc[0]:,.2f}")
+    col9.metric("Creator Net Worth (USD)", f"${df_raw_training_data['context_be_creator_net_worth_usd'].iloc[0]:,.2f}")
+
+    st.markdown("---")
+
+    # ---- KPIs ----
+    st.subheader("Trading KPIs")
+    total_trades = len(df_raw_training_data)
+    total_volume_token = df_raw_training_data["bq_trade_amount_token"].sum()
+    total_volume_usd = df_raw_training_data["trade_value_usd"].sum()
+    avg_trade_size = df_raw_training_data["bq_trade_amount_token"].mean()
+    total_fees_usd = df_raw_training_data["bq_transaction_feeinusd"].sum()
+    unique_traders = df_raw_training_data["bq_transaction_maker"].nunique()
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Trades", f"{total_trades:,}")
+    col2.metric("Volume (Tokens)", f"{total_volume_token:,.2f}")
+    col3.metric("Volume (USD)", f"${total_volume_usd:,.2f}")
+
+    col4, col5, col6 = st.columns(3)
+    col4.metric("Avg Token Trade Size", f"{avg_trade_size:,.2f}")
+    col5.metric("Total Fees (USD)", f"${total_fees_usd:,.2f}")
+    col6.metric("Unique Traders", unique_traders)
+
+    st.markdown("---")
+
+    # ---- CHARTS ----
+    st.subheader("Price Over Time (USD)")
+    st.line_chart(df_raw_training_data.set_index("bq_block_time")["bq_trade_priceinusd"])
+
+    st.subheader("Volume Over Time (USD)")
+    volume_time = df_raw_training_data.groupby(pd.Grouper(key="bq_block_time", freq="1min"))["trade_value_usd"].sum()
+    st.line_chart(volume_time)
+
+    st.subheader("Buy vs Sell Distribution")
+    st.bar_chart(df_raw_training_data["bq_trade_side_type"].value_counts())
+
+    st.subheader("Top 10 Traders by Volume (USD)")
+    top_traders = df_raw_training_data.groupby("bq_transaction_maker")["trade_value_usd"].sum().nlargest(10)
+    st.bar_chart(top_traders)
+
 
 # --------------------------
 # INIT

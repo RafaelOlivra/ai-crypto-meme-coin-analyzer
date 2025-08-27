@@ -26,7 +26,7 @@ class CoinTrainingDataPrep:
         self.bitquery = BitQuerySolana()
         self.solana = SolanaTokenSummary()
 
-    @cache_handler.cache(ttl_s=5)
+    @cache_handler.cache(ttl_s=2)
     def get_raw_pair_training_data(self, mint_address: str, pair_address: str, save: bool = False) -> Optional[dict]:
         """
         Get raw training data for a token pair.
@@ -182,10 +182,40 @@ class CoinTrainingDataPrep:
 
         # Standardize token symbol
         df_merged["context_token_symbol"] = df_merged["bq_trade_currency_symbol"]
+        
+        # -- Set Data Types
+
+        # Numeric Columns
+        num_cols = [
+            "bq_trade_amount_token",
+            "bq_trade_priceinusd",
+            "bq_transaction_feeinusd",
+            "bq_mc_usd",
+            "context_be_token_price_usd",
+            "context_be_token_total_supply",
+            "context_be_creator_net_worth_usd",
+            "context_be_token_holders",
+            "context_be_top10_holder_percentage",
+            "context_be_liquidity_pool_usd",
+            "context_dex_mc_usd"
+        ]
+        for col in num_cols:
+            if col in df_merged.columns:
+                df_merged[col] = pd.to_numeric(df_merged[col], errors="coerce")
+
+        # Datetime Columns
+        dt_cols = [
+            "context_be_token_creation_time",
+            "context_be_pool_creation_time",
+            "bq_block_time"
+        ]
+        for col in dt_cols:
+            if col in df_merged.columns:
+                df_merged[col] = pd.to_datetime(df_merged[col], errors="coerce")
 
         # -- Store Data
         if save:
-            coin_name = df_bitquery_summary['bq_trade_currency_symbol'].iloc[0]
+            coin_name = df_merged['bq_trade_currency_symbol'].iloc[0]
             store_time = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             self.store_data(df_merged, f"ctd_{coin_name}_{pair_address}_{store_time}.parquet")
 

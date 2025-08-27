@@ -846,7 +846,7 @@ class SolanaTokenSummary:
         
         token_symbol = rc_token_info.get("tokenMeta", {}).get("symbol", "")
         rc_score = rc_token_info.get("score_normalised", 0)
-        rc_risks = self._rugcheck_get_token_risks(mint_address)
+        rc_risks = ", ".join(self._rugcheck_get_token_risks(mint_address))
         rc_mint_authority = self._rugcheck_check_mint_authority(mint_address)
         rc_is_mutable = self._rugcheck_check_is_mutable(mint_address)
         rc_is_freezable = self._rugcheck_check_freeze_authority(mint_address)

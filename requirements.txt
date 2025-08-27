@@ -12,6 +12,7 @@ python-dotenv==1.0.1
 slowapi
 streamlit==1.40.0
 pickle
+matplotlib
 # accelerate
 # torch --index-url https://download.pytorch.org/whl/cu118
 # torchaudio
