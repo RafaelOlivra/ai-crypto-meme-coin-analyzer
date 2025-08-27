@@ -1,10 +1,12 @@
 import os
 import json
 import pandas as pd
-from requests.exceptions import RequestException
+import hashlib
+
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional, Dict, Any, List
+from requests.exceptions import RequestException
 
 from services.AppData import AppData
 from services.BitQuerySolana import BitQuerySolana
@@ -12,6 +14,7 @@ from services.SolanaTokenSummary import SolanaTokenSummary
 
 from lib.LocalCache import cache_handler
 from lib.Utils import Utils
+from services.logger.Logger import _log
 
 DEFAULT_CACHE_TTL = 300
 MINUTE_IN_SECONDS = 60
@@ -27,7 +30,11 @@ class CoinTrainingDataPrep:
         self.solana = SolanaTokenSummary()
 
     @cache_handler.cache(ttl_s=2)
-    def get_raw_pair_training_data(self, mint_address: str, pair_address: str, save: bool = False) -> Optional[dict]:
+    def get_raw_pair_training_data(self,
+            mint_address: str,
+            pair_address: str,
+            save: bool = True
+        ) -> pd.DataFrame:
         """
         Get raw training data for a token pair.
 
@@ -37,7 +44,7 @@ class CoinTrainingDataPrep:
             save (bool): Whether to save the data to a file.
 
         Returns:
-            Optional[dict]: The raw training data for the token pair.
+            pd.DataFrame: The raw training dataFrame for the token pair.
         """
 
         # -- Get Solana token summary
@@ -223,22 +230,53 @@ class CoinTrainingDataPrep:
 
         # -- Store Data
         if save:
-            coin_name = df_merged['bq_trade_currency_symbol'].iloc[0]
+            latest_block_time = df_merged['bq_block_time'].max().strftime("%Y%m%d_%H%M%S")
             store_time = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            self.store_data(df_merged, f"ctd_{coin_name}_{pair_address}_{store_time}.parquet")
+            df_hash = self.hash_dataframe(df_merged)
+
+            number_of_rows = df_merged.shape[0]
+            coin_name = df_merged['bq_trade_currency_symbol'].iloc[0]
+            file_name = f"ctd_raw_{coin_name}_{pair_address}_{latest_block_time}_{df_hash}_{number_of_rows}.parquet"
+
+            self.store_data(df_merged, file_name)
 
         return df_merged
-    
-    def store_data(self, data: pd.DataFrame, filename: str):
+
+    def store_data(self,
+            data: pd.DataFrame,
+            filename: str,
+            replace: bool = False
+        ):
         """
         Store the DataFrame to a parquet file.
 
         Args:
             data (pd.DataFrame): The DataFrame to store.
             filename (str): The filename to store the DataFrame as.
+            replace (bool): Whether to replace the file if it exists.
         """
+        # Make sure the storage directory exists
         storage_dir = self.app_data.get_config("permanent_storage_dir")
         if not os.path.exists(storage_dir):
             os.makedirs(storage_dir)
 
+        if not replace and os.path.exists(os.path.join(storage_dir, filename)):
+            _log(f"File {filename} already exists. Skipping save.")
+            return
+
         data.to_parquet(os.path.join(storage_dir, filename), index=False)
+
+    def hash_dataframe(self, df: pd.DataFrame) -> str:
+        """
+        Generates a SHA256 hash for a pandas DataFrame.
+
+        The DataFrame is first converted to a string representation,
+        including columns, index, and values, to ensure all aspects
+        contribute to the hash.
+        """
+        # Convert DataFrame to a string representation, including index and columns
+        df_string = str(df.columns) + str(df.index) + str(df.values)
+        
+        # Encode the string to bytes and compute SHA256 hash
+        # Use only the first 8 digits of the hash
+        return hashlib.sha256(df_string.encode()).hexdigest()[:8]

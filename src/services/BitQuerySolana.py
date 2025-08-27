@@ -200,10 +200,11 @@ class BitQuerySolana:
     # Token Trades
     
     @cache_handler.cache(ttl_s=REALTIME_IN_SECONDS)
-    def get_recent_coin_tx_for_all_pools(
+    def get_recent_tx_for_all_pools(
         self,
         mint_address: str,
-        limit: int = 600 # Max allowed is 1000000000
+        limit: int = 600, # Max allowed is 1000000000
+        order: str = "descending"
       ) -> List[Dict]:
         """
         Get the most recent transactions for a Solana coin.
@@ -212,6 +213,7 @@ class BitQuerySolana:
             mint_address (str): The mint address of the coin (contract_address).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
             limit (int): The number of recent transactions to retrieve.
+            order (str): The order in which to retrieve transactions (ascending/descending).
 
         Returns:
             list: A list of recent transaction data.
@@ -228,7 +230,7 @@ class BitQuerySolana:
                 Transaction: {Result: {Success: true}}
               },
               limit: {count: $limit},
-              orderBy: { descending: Block_Time }
+              orderBy: { ORDER_BY: Block_Time }
             ) {
               Trade {
                 Amount
@@ -259,7 +261,7 @@ class BitQuerySolana:
             }
           }
         }
-        """
+        """.replace("ORDER_BY", order.lower())
 
         variables = {
             "mintAddress": mint_address,
@@ -288,7 +290,8 @@ class BitQuerySolana:
           self,
           mint_address: str,
           pair_address: str,
-          limit: int = 600 # Max allowed is 1000000000
+          limit: int = 600, # Max allowed is 1000000000
+          order: str = "descending"
         ):
         """
         Get recent trades for the token.
@@ -296,6 +299,8 @@ class BitQuerySolana:
         Args:
             mint_address (str): Mint address of the token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
+            limit (int): The number of recent trades to retrieve.
+            order (str): The order in which to retrieve trades (ascending/descending).
 
         Returns:
             dict: A dictionary containing the token's summary statistics, such as price,
@@ -313,7 +318,8 @@ class BitQuerySolana:
                       }
                       Transaction: { Result: { Success: true } }
                   },
-                  limit: { count: $limit }
+                  limit: { count: $limit },
+                  orderBy: { ORDER_BY: Block_Time }
               ) {
                   Block {
                       Time
@@ -346,7 +352,7 @@ class BitQuerySolana:
               }
           }
         }
-        """
+        """.replace("ORDER_BY", order.lower())
         
         variables = {
           "mintAddress": mint_address,
@@ -375,7 +381,8 @@ class BitQuerySolana:
           self,
           mint_address: str,
           pair_address: str,
-          limit: int = 600 # Max allowed is 1000000000
+          limit: int = 600, # Max allowed is 1000000000
+          order: str = "descending"
         ) -> pd.DataFrame:
         """
         Get recent trades for the token as a DataFrame.
@@ -383,6 +390,8 @@ class BitQuerySolana:
         Args:
             mint_address (str): Mint address of the token to analyze (base token).
             pair_address (str): Mint address of the specific market pair/liquidity pool.
+            limit (int): The number of recent trades to retrieve.
+            order (str): The order in which to retrieve trades (ascending/descending).
 
         Returns:
             pd.DataFrame: A DataFrame containing the token's recent trade data.
@@ -390,7 +399,8 @@ class BitQuerySolana:
         trades = self.get_recent_pair_tx(
             mint_address=mint_address,
             pair_address=pair_address,
-            limit=limit
+            limit=limit,
+            order=order
         )
 
         def flatten_trade_record(record):

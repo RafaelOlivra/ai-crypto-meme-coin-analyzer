@@ -31,7 +31,7 @@ def test_get_latest_tokens():
 def test_get_recent_coin_trades_for_all_pools():
     bitquery = BitQuerySolana()
     mint_address = '2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv' # Pudgy Penguins
-    transactions = bitquery.get_recent_coin_tx_for_all_pools(mint_address, limit=3)
+    transactions = bitquery.get_recent_tx_for_all_pools(mint_address, limit=3)
     _log("Pudgy Penguins recent transactions fetched successfully.", transactions)
     assert isinstance(transactions, list)
     assert len(transactions) == 3
