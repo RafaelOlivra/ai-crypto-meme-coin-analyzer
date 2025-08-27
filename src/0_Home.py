@@ -188,7 +188,7 @@ def Home():
     st.subheader("Price Over Time (USD)")
     st.line_chart(df_raw_training_data.set_index("bq_block_time")["bq_trade_priceinusd"])
 
-    st.subheader("Volume Over Time (USD)")
+    st.subheader("Trade Volume Over Time (USD)")
     volume_time = df_raw_training_data.groupby(pd.Grouper(key="bq_block_time", freq="1min"))["trade_value_usd"].sum()
     st.line_chart(volume_time)
 
