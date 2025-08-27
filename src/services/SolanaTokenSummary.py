@@ -462,7 +462,7 @@ class SolanaTokenSummary:
         """
         return self._rugcheck_get_liquidity_locked(mint_address, pair_address) > 1
 
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_result = {})
     def _rugcheck_fetch(self, mint_address: str) -> dict:
         """
         Fetches a token report from the RugCheck API.
@@ -475,7 +475,7 @@ class SolanaTokenSummary:
         """
         url = f"https://api.rugcheck.xyz/v1/tokens/{mint_address}/report"
         try:
-            response = self.session.get(url, timeout=10)
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -831,7 +831,11 @@ class SolanaTokenSummary:
         rc_is_mutable = self._rugcheck_check_is_mutable(mint_address)
         rc_is_freezable = self._rugcheck_check_freeze_authority(mint_address)
         rc_lp_locked = self._rugcheck_get_liquidity_locked(mint_address, pair_address)
-        rc_pool_token_supply = rc_pair_info.get("lp", {}).get("tokenSupply", 0)
+        
+        rc_pair_lp_info = rc_pair_info.get("lp", {})
+
+        rc_pool_token_supply = rc_pair_lp_info.get("tokenSupply", 0)
+        rc_pool_tokens_locked = rc_pair_lp_info.get("lpLocked", 0)
 
         # ================
         # SolScan data
@@ -858,7 +862,7 @@ class SolanaTokenSummary:
             "rc_is_freezable": rc_is_freezable,
             "rc_liquidity_locked_tokens": rc_lp_locked,
             "rc_is_liquidity_locked": True if rc_lp_locked else False,
-            "rc_pool_token_supply": rc_pool_token_supply,
+            "rc_pool_tokens_locked": rc_pool_tokens_locked,
 
             # ================
             # SolScan
@@ -912,11 +916,11 @@ class SolanaTokenSummary:
             
             "dex_price_usd": dexscreener_pair_info.get("priceUsd"),
             "dex_liquidity_pool_usd": dex_liquidity_usd,
-            "dex_liquidity_pool_tokens": dex_lp_tokens,
+            "dex_unlocked_liquidity_pool_tokens": dex_lp_tokens,
             "dex_fdv": float(dexscreener_pair_info.get("fdv") or 0),
             "dex_mc_usd": dex_token_market_cap_usd,
 
-            "cl_pool_supply_token_percentage": round((dex_lp_tokens / be_total_token_supply * 100), 2),
+            "cl_unlocked_lp_supply_token_percentage": round((dex_lp_tokens / be_total_token_supply * 100), 2),
             
             # Volume momentum
             "dex_volume_h24": dexscreener_pair_info.get("volume", {}).get("h24"),

@@ -5,7 +5,7 @@ import requests
 import json
 import tempfile
 from functools import wraps
-from typing import Callable
+from typing import Callable, Any
 
 
 # --- Configuration ---
@@ -135,8 +135,8 @@ class LocalCache:
         except Exception as e:
             print(f"An unexpected error occurred while caching {url}: {e}")
             return url
-            
-    def cache(self, ttl_s: int = DEFAULT_TTL_SECONDS):
+
+    def cache(self, ttl_s: int = DEFAULT_TTL_SECONDS, invalidate_if_result: Any = '__INVALIDATE__'):
         """
         Wrapper function that caches the result of a function call.
         Use this by decorating your function with @cache(ttl_s=TIME_IN_SECONDS).
@@ -148,6 +148,7 @@ class LocalCache:
 
         Args:
             ttl_s (int): Time-to-live for the cache in seconds.
+            invalidate_if_result (Any): If the cached result matches this value, the cache will be invalidated.
         """
         ttl_ms = ttl_s * 1000
         
@@ -184,9 +185,14 @@ class LocalCache:
 
                 if not self._is_expired(cache_file_path, ttl_ms):
                     try:
-                        print(f"Cache hit for function '{func.__name__}' on instance {instance_id}")
                         with open(cache_file_path, "r") as f:
-                            return json.load(f)
+                            cache_value = json.load(f)
+                            if invalidate_if_result is not '__INVALIDATE__' and cache_value == invalidate_if_result:
+                                print(f"Cache invalidated for function '{func.__name__}' on instance {instance_id} due to invalidate_on_result match.")
+                            else:
+                                print(f"Cache hit for function '{func.__name__}' on instance {instance_id}")
+                                return cache_value
+
                     except (IOError, json.JSONDecodeError) as e:
                         print(f"Error reading from cache, re-running function: {e}")
 
