@@ -127,7 +127,6 @@ class SolanaTokenSummary:
         """
         return mint_info.get("mintAuthority") is None
     
-    # --- New synchronous entry point for wallet age estimation ---
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def _rpc_estimate_wallet_age(self, wallet_address: str) -> int:
         """
@@ -141,8 +140,6 @@ class SolanaTokenSummary:
             int: The estimated age of the wallet in days, or -1 if not found.
         """
         try:
-            # We will use the new, optimized, parallel method even for a single wallet
-            # We call the new async entry point using asyncio.run()
             ages = asyncio.run(self._rpc_estimate_wallet_ages_async([wallet_address]))
             age = ages[0]
         except (IndexError, RuntimeError) as e:
@@ -150,7 +147,6 @@ class SolanaTokenSummary:
             age = -1
         return age
     
-    # --- New async entry point for wallet age estimation ---
     @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
     def _rpc_estimate_wallet_ages(self, wallet_addresses: List[str]) -> List[int]:
         """
@@ -237,7 +233,7 @@ class SolanaTokenSummary:
                 
         return task_results
 
-    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
+    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS, invalidate_if_return=-1)
     async def _rpc_estimate_wallet_age_async(self, wallet_address: str, rpc_url: Optional[str] = None) -> int:
         """
         Asynchronously gets the wallet age (days since first transaction) by
@@ -288,8 +284,8 @@ class SolanaTokenSummary:
         age_days = (now - first_tx_time).days
 
         return age_days
-    
-    @cache_handler.cache(ttl_s=RPC_CACHE_TTL)
+
+    @cache_handler.cache(ttl_s=RPC_CACHE_TTL, invalidate_if_return={})
     def _rpc_fetch(self, method: str, params: list) -> dict:
         """
         Fetches data from a random Solana RPC endpoint with retry logic.
