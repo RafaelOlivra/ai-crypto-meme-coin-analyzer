@@ -792,12 +792,15 @@ class SolanaTokenSummary:
         be_total_token_supply = be_token_security.get("totalSupply", 0)
         
         be_metadata = be_token_overview.get("extensions", {})
-        be_token_meta = {
-            "website": be_metadata.get("website", ""),
-            "twitter": be_metadata.get("twitter", ""),
-            "discord": be_metadata.get("discord", ""),
-        }
-        be_token_meta = {k: v for k, v in be_token_meta.items() if v}
+        be_token_description = be_metadata.get("description", "") if be_metadata else ""
+        be_token_meta = {}
+        if be_metadata:
+            be_token_meta = {
+                "website": be_metadata.get("website", ""),
+                "twitter": be_metadata.get("twitter", ""),
+                "discord": be_metadata.get("discord", ""),
+            }
+            be_token_meta = {k: v for k, v in be_token_meta.items() if v}
 
         be_token_price_usd = be_token_overview.get("price", 0)
         be_lp_liquidity_usd = be_pool_overview.get("liquidity", 0)
@@ -843,8 +846,8 @@ class SolanaTokenSummary:
             "token_symbol": token_symbol,
             "mint_address": mint_address,
             "pair_address": pair_address,
-            "description": be_token_overview.get("extensions", {}).get("description", ""),
-            
+            "description": be_token_description,
+
             # ================
             # RUG CHECK
             # ================
