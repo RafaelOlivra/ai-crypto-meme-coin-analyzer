@@ -177,7 +177,7 @@ def Home():
     col3.metric("Volume (USD)", f"${total_volume_usd:,.2f}")
 
     col4, col5, col6 = st.columns(3)
-    col4.metric("Avg Token Trade Size", f"{avg_trade_size:,.2f}")
+    col4.metric("Avg Token Trade Amount", f"{avg_trade_size:,.2f}")
     col5.metric("Total Fees (USD)", f"${total_fees_usd:,.2f}")
     col6.metric("Unique Traders", unique_traders)
 
