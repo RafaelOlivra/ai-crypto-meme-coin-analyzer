@@ -113,7 +113,7 @@ def Home():
 
     st.markdown("### Token Summary (Aggregated Sources)")
     # Convert any json cells to string
-    df_sol_summary = df_sol_summary.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
+    df_sol_summary = df_sol_summary.map(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
 
     st.dataframe(df_sol_summary.T.rename_axis("Agg Token Summary"), use_container_width=True)
 

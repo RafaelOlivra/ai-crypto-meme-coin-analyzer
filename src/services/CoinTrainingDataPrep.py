@@ -53,7 +53,7 @@ class CoinTrainingDataPrep:
                 df_sol_summary[cell] = df_sol_summary[cell].str.replace("url: ", "")
         
         # Convert any other json cells to string
-        df_sol_summary = df_sol_summary.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
+        df_sol_summary = df_sol_summary.map(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
         
         # -- Add BitQuery data
         
