@@ -149,14 +149,15 @@ class LocalCache:
         Args:
             ttl_s (int): Time-to-live for the cache in seconds.
         """
-        if self._is_cache_disabled():
-            return
-
         ttl_ms = ttl_s * 1000
         
         def decorator(func: Callable):
             @wraps(func)
             def wrapper(*args, **kwargs):
+                
+                if self._is_cache_disabled():
+                    return
+        
                 is_method = '.' in func.__qualname__
                 instance_id = None
                 cache_args = args
