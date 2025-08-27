@@ -35,11 +35,18 @@ class LocalCache:
             cls._instance = super(LocalCache, cls).__new__(cls)
             cls._instance._initialized = False
         return cls._instance
-    
-    def __init__(self, cache_dir: str = DEFAULT_CACHE_DIR):
+
+    def __init__(self,
+            cache_dir: str = DEFAULT_CACHE_DIR,
+            print: list[str] = ['misses', 'errors']
+        ):
         """
         Initializes the cache handler and ensures the cache directory exists.
         This will only run on the first instance creation.
+
+        Args:
+            cache_dir (str): The directory where cache files will be stored.
+            print (list[str]): A list of cache event types to print (e.g., ['hits', 'misses', 'errors']).
         """
         if self._initialized:
             return
@@ -47,6 +54,9 @@ class LocalCache:
         self.cache_dir = cache_dir
         os.makedirs(self.cache_dir, exist_ok=True)
         self._initialized = True
+        self.print_hits = 'hits' in print
+        self.print_misses = 'misses' in print
+        self.print_errors = 'errors' in print
 
         self.cache_disabled_flag = os.path.join(self.cache_dir, ".py-local-cache-disabled")
         
@@ -55,6 +65,21 @@ class LocalCache:
         Checks if caching is disabled for all instances of the LocalCache class.
         """
         return os.path.exists(self.cache_disabled_flag)
+
+    def _print(self, msg: str, type: str = "hit") -> None:
+        """
+        Prints a message to the console with a specific type.
+
+        Args:
+            msg (str): The message to print.
+            type (str): The type of message (e.g., "info", "warning", "error").
+        """
+        if self.print_hits and type == "hit":
+            print(f"[Cache {type.upper()}] {msg}")
+        elif self.print_misses and type == "miss":
+            print(f"[Cache {type.upper()}] {msg}")
+        elif self.print_errors and type == "error":
+            print(f"[Cache {type.upper()}] {msg}")
 
     def _get_file_path(self, key: str, ext: str = "") -> str:
         """
@@ -94,7 +119,7 @@ class LocalCache:
         except FileNotFoundError:
             return True
         except Exception as e:
-            print(f"Error checking file expiration for {file_path}: {e}")
+            self._print(f"Error checking file expiration for {file_path}: {e}", type="error")
             return True
 
     def _cache_handler(self, key: str, ttl_s: int, func: Callable, args: tuple, kwargs: dict, invalidate_if_return: Any = '__INVALIDATE__') -> Any:
@@ -134,12 +159,12 @@ class LocalCache:
                     with open(json_cache_path, "r") as f:
                         cache_value = json.load(f)
                         if invalidate_if_return is not '__INVALIDATE__' and cache_value == invalidate_if_return:
-                            print(f"Cache invalidated for key '{key}'.")
+                            self._print(f"Cache invalidated for key '{key}'.", type="miss")
                         else:
-                            print(f"Cache hit (JSON) for key '{key}'")
+                            self._print(f"Cache hit (JSON) for key '{key}'", type="hit")
                             return cache_value
                 except (IOError, json.JSONDecodeError, ValueError) as e:
-                    print(f"JSON cache file corrupt or tampered with for key '{key}', re-running: {e}")
+                    self._print(f"JSON cache file corrupt or tampered with for key '{key}', re-running: {e}", type="error")
                     os.remove(json_cache_path)
 
         # Check for and load from Pickle cache
@@ -153,21 +178,21 @@ class LocalCache:
                     with open(pickle_cache_path, "rb") as f:
                         cache_value = pickle.load(f)
                         if invalidate_if_return is not '__INVALIDATE__' and cache_value == invalidate_if_return:
-                            print(f"Cache invalidated for key '{key}'.")
+                            self._print(f"Cache invalidated for key '{key}'.", type="miss")
                         else:
-                            print(f"Cache hit (Pickle) for key '{key}'")
+                            self._print(f"Cache hit (Pickle) for key '{key}'", type="hit")
                             return cache_value
                 except (IOError, pickle.PickleError, ValueError) as e:
-                    print(f"Pickle cache file corrupt or tampered with for key '{key}', re-running: {e}")
+                    self._print(f"Pickle cache file corrupt or tampered with for key '{key}', re-running: {e}", type="error")
                     os.remove(pickle_cache_path)
 
-        print(f"Cache miss for key '{key}', running original function...")
+        self._print(f"Cache miss for key '{key}', running original function: '{func.__name__}'", type="miss")
         result = func(*args, **kwargs)
 
         try:
             with open(json_cache_path, "w") as f:
                 json.dump(result, f)
-            print(f"Result for key '{key}' cached to {json_cache_path}")
+            self._print(f"Result for key '{key}' cached to {json_cache_path}")
             if os.path.exists(pickle_cache_path):
                 os.remove(pickle_cache_path)
         except TypeError:
@@ -176,12 +201,12 @@ class LocalCache:
                     pickle.dump(result, f)
                 if os.path.exists(json_cache_path):
                     os.remove(json_cache_path)
-                print(f"Result for key '{key}' cached (Pickle) to {pickle_cache_path}")
+                self._print(f"Result for key '{key}' cached (Pickle) to {pickle_cache_path}")
             except Exception as e:
-                print(f"Failed to save to cache for key '{key}': {e}")
+                self._print(f"Failed to save to cache for key '{key}': {e}", type="error")
         except Exception as e:
-            print(f"Failed to save to cache for key '{key}': {e}")
-        
+            self._print(f"Failed to save to cache for key '{key}': {e}", type="error")
+
         return result
 
     def cache_url(self, url: str, ttl_s: int = DEFAULT_TTL_SECONDS) -> str:
@@ -211,15 +236,14 @@ class LocalCache:
         def fetch_url_content():
             """Wrapper function to fetch URL content."""
             try:
-                print(f"Fetching and caching URL: {url}")
                 response = requests.get(url, timeout=10)
                 response.raise_for_status()
                 return response.content
             except requests.exceptions.RequestException as e:
-                print(f"Failed to fetch {url}: {e}")
+                self._print(f"Failed to fetch {url}: {e}", type="error")
                 return url
             except Exception as e:
-                print(f"An unexpected error occurred while caching {url}: {e}")
+                self._print(f"An unexpected error occurred while caching {url}: {e}", type="error")
                 return url
 
         cached_data = self._cache_handler(url_hash, ttl_s, fetch_url_content, (), {})

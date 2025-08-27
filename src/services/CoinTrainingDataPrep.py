@@ -185,6 +185,14 @@ class CoinTrainingDataPrep:
         
         # -- Set Data Types
 
+        # Specific Integer Columns
+        int_cols = [
+            "context_rc_lp_tokens_locked",
+        ]
+        for col in int_cols:
+            if col in df_merged.columns:
+                df_merged[col] = pd.to_numeric(df_merged[col], downcast="integer", errors="coerce")
+
         # Numeric Columns
         num_cols = [
             "bq_trade_amount_token",
