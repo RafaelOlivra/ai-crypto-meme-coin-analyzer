@@ -37,6 +37,7 @@ def Home():
         st.write("######")
         if st.button("Refresh", use_container_width=True):
             app_data.clear_state("latest_tokens")
+            app_data.clear_state("custom_pair_address")
 
     with col_token_selector:
         # Get latest meme coins from BitQuery
@@ -100,6 +101,7 @@ def Home():
             app_data.set_state("custom_pair_address", pair_address)
             token = solana._birdeye_get_mint_from_pair(pair_address)
         else:
+            app_data.clear_state("custom_pair_address")
             token = addresses[current_latest_token]["mint"]
             pair_address = addresses[current_latest_token]["pair"]
             
