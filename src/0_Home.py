@@ -31,11 +31,11 @@ def Home():
     
     st.title("🐸 Meme Coin Analyzer Concept")
     
-    col_token_selector, col_refresh, sep, col_custom_pair = st.columns([4, 2, .5, 4])
+    col_token_selector, col_refresh, sep, col_custom_pair = st.columns([4, 1, .5, 4])
     
     with col_refresh:
         st.write("######")
-        if st.button("Refresh Tokens", use_container_width=True):
+        if st.button("Refresh", use_container_width=True):
             app_data.clear_state("latest_tokens")
 
     with col_token_selector:
@@ -111,7 +111,7 @@ def Home():
     token_name = df_sol_summary.loc[0]['token_symbol']
     st.markdown(f"# ℹ️ Token Overview: {token_name}")
 
-    st.markdown("### Token Summary (Aggregator)")
+    st.markdown("### Token Summary (Aggregated Sources)")
     # Convert any json cells to string
     df_sol_summary = df_sol_summary.applymap(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
 
@@ -142,6 +142,7 @@ def Home():
 
     # ---- HEADER ----
     st.markdown("# 📊 Token Analysis")
+    st.markdown(f"##### Based on {df_raw_training_data['bq_block_time'].count()} transactions")
 
     # ---- CONTEXT INFO ----
     st.subheader("Token Context")
