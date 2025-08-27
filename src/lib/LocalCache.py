@@ -136,7 +136,7 @@ class LocalCache:
             print(f"An unexpected error occurred while caching {url}: {e}")
             return url
 
-    def cache(self, ttl_s: int = DEFAULT_TTL_SECONDS, invalidate_if_result: Any = '__INVALIDATE__'):
+    def cache(self, ttl_s: int = DEFAULT_TTL_SECONDS, invalidate_if_return: Any = '__INVALIDATE__'):
         """
         Wrapper function that caches the result of a function call.
         Use this by decorating your function with @cache(ttl_s=TIME_IN_SECONDS).
@@ -148,7 +148,8 @@ class LocalCache:
 
         Args:
             ttl_s (int): Time-to-live for the cache in seconds.
-            invalidate_if_result (Any): If the cached result matches this value, the cache will be invalidated.
+            invalidate_if_return (Any): If the returned cached result matches this value,
+                                        the cache will be invalidated.
         """
         ttl_ms = ttl_s * 1000
         
@@ -187,7 +188,7 @@ class LocalCache:
                     try:
                         with open(cache_file_path, "r") as f:
                             cache_value = json.load(f)
-                            if invalidate_if_result is not '__INVALIDATE__' and cache_value == invalidate_if_result:
+                            if invalidate_if_return is not '__INVALIDATE__' and cache_value == invalidate_if_return:
                                 print(f"Cache invalidated for function '{func.__name__}' on instance {instance_id} due to invalidate_on_result match.")
                             else:
                                 print(f"Cache hit for function '{func.__name__}' on instance {instance_id}")

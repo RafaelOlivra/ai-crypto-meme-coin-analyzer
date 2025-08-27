@@ -462,7 +462,7 @@ class SolanaTokenSummary:
         """
         return self._rugcheck_get_liquidity_locked(mint_address, pair_address) > 1
 
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_result = {})
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return = {})
     def _rugcheck_fetch(self, mint_address: str) -> dict:
         """
         Fetches a token report from the RugCheck API.
@@ -518,7 +518,7 @@ class SolanaTokenSummary:
                 return pair
         return None
     
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return = {})
     def _dexscreener_fetch(self, mint_address: str) -> dict:
         """
         Fetches token data from the Dexscreener API.
