@@ -11,6 +11,7 @@ pytest==8.3.3
 python-dotenv==1.0.1
 slowapi
 streamlit==1.40.0
+pickle
 # accelerate
 # torch --index-url https://download.pytorch.org/whl/cu118
 # torchaudio
