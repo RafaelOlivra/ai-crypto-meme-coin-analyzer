@@ -4,6 +4,7 @@ from services.SolanaTokenSummary import SolanaTokenSummary
 TEST_TOKEN_ADDRESS = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
 TEST_TOKEN_POOL = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ" # Raydium
 TEST_WALLET_ADDRESS = "GixMsyA2jeAoUEQkF2vZD77DdGGh7FFyW8qsezetyEs3"
+TEST_WALLET_ADDRESS_2 = "39H3DGBpHpffjTuwQDR9yv9AgbK4U4hesLdsVZ9yDDc9"
 
 ## Solana RPC
 
@@ -59,7 +60,24 @@ def test_birdeye_get_wallet_overview():
     _log("Wallet overview:", wallet_info)
     assert isinstance(wallet_info, dict)
     assert "net_worth" in wallet_info
+    
+def test_birdeye_get_wallet_trades():
+    solana = SolanaTokenSummary()
+    trades = solana._birdeye_get_wallet_trades(TEST_WALLET_ADDRESS_2, max_trades=200)
+    assert isinstance(trades, list)
+    _log("Wallet trades:", len(trades))
+    assert len(trades) == 200
 
+def test_birdeye_get_wallet_traded_tokens():
+    solana = SolanaTokenSummary()
+    traded_tokens = solana._birdeye_get_wallet_traded_tokens(TEST_WALLET_ADDRESS_2, max_trades=200)
+    _log("Wallet Traded Tokens:", len(traded_tokens))
+    assert isinstance(traded_tokens, list)
+    assert len(traded_tokens) > 0
+    for token in traded_tokens:
+        assert isinstance(token, dict)
+        assert "mint_address" in token
+        assert "pair_address" in token
 
 def test_birdeye_get_wallet_pnl():
     solana = SolanaTokenSummary()
@@ -70,8 +88,20 @@ def test_birdeye_get_wallet_pnl():
     _log("Wallet PnL:", pnl_info)
     assert isinstance(pnl_info, dict)
     for token in pnl_info:
+        assert isinstance(pnl_info[token], dict)
+        assert token in pnl_info
         assert "symbol" in pnl_info[token]
         assert "pnl" in pnl_info[token]
+
+def test_birdeye_get_wallet_profit_on_token():
+    solana = SolanaTokenSummary()
+    pnl_info = solana._birdeye_get_wallet_profit_on_token(
+        TEST_WALLET_ADDRESS,
+        'So11111111111111111111111111111111111111112'
+    )
+    _log("Wallet Profit on Token:", pnl_info)
+    assert isinstance(pnl_info, float)
+    assert pnl_info < 0
 
 def test_birdeye_get_token_supply():
     solana = SolanaTokenSummary()
@@ -86,7 +116,6 @@ def test_birdeye_get_mint_from_pair():
     _log("Mint Address from Pair:", mint_address)
     assert isinstance(mint_address, str)
     assert mint_address == TEST_TOKEN_ADDRESS
-    
 
 ## Solscan
 

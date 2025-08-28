@@ -699,7 +699,124 @@ class SolanaTokenSummary:
             return None
         return data["data"]
 
-    def _birdeye_get_wallet_pnl(self, wallet_address: str, tokens: List[str]) -> Optional[dict]:
+    def _birdeye_get_wallet_trades(
+        self,
+        wallet_address: str,
+        offset: int = 0,
+        before_ts: int = 0,
+        after_ts: int = 0,
+        max_trades: int = 10_000
+    ) -> Optional[list]:
+        """
+        Return a list of trades for a specific wallet from the Birdeye API.
+        Will automatically paginate through multiple requests if needed.
+        @see https://docs.birdeye.so/reference/get-trader-txs-seek_by_time
+
+        Args:
+            wallet_address (str): The public key of the wallet.
+            offset (int): Starting offset for pagination.
+            before_ts (int): Filter for trades before this timestamp (epoch ms).
+            after_ts (int): Filter for trades after this timestamp (epoch ms).
+            max_trades (int): Max total trades to fetch (Birdeye caps at 10,000).
+
+        Returns:
+            Optional[list]: A list of wallet trades, or None on failure.
+        """
+        all_trades = []
+        total_fetched = 0
+        birdeye_limit = 100
+        tokens_to_ignore = ["USDC", "USDT"]
+
+        while total_fetched < max_trades:
+            data = self._birdeye_fetch(
+                "trader/txs/seek_by_time",
+                {
+                    "address": wallet_address,
+                    "limit": birdeye_limit,
+                    "offset": offset,
+                    "before_time": before_ts if before_ts > 0 else None,
+                    "after_time": after_ts if after_ts > 0 else None,
+                },
+            )
+            #_log(f"Fetched {len(data.get('data', {}).get('items', []))} trades from Birdeye for wallet {wallet_address} (offset {offset})", level="DEBUG")
+            
+            if not data.get("success") or not data.get("data"):
+                break  # stop if API fails or no more data
+
+            trades = data["data"].get("items", [])
+            if not trades:
+                break  # no more trades to fetch
+            
+            # Filter out trades involving ignored tokens
+            for trade in trades:
+                if trade.get("quote", {}).get("symbol") in tokens_to_ignore or \
+                   trade.get("base", {}).get("symbol") in tokens_to_ignore:
+                       continue
+                all_trades.append(trade)
+
+            fetched = len(trades)
+            total_fetched += fetched
+            offset += fetched  # move pagination window forward
+
+            if fetched < birdeye_limit:
+                # Last page reached
+                break
+
+        # Crop the results to the maximum number of trades
+        all_trades = all_trades[:max_trades]
+
+        return all_trades if all_trades else None
+        
+
+    def _birdeye_get_wallet_traded_tokens(self,
+                wallet_address: str,
+                max_trades: int = 10_000
+        ) -> Optional[List[str]]:
+        """
+        Get a list of tokens that have been traded by a specific wallet from the Birdeye API.
+
+        Args:
+            wallet_address (str): The public key of the wallet.
+            max_trades (int): The maximum number of trades to fetch.
+
+        Returns:
+            Optional[List[str]]: A list of traded token:pool addresses, or None on failure.
+        """
+        wallet_trades = self._birdeye_get_wallet_trades(wallet_address, offset=0, max_trades=max_trades)
+        if not wallet_trades:
+            return None
+        tokens = []
+        tokens_seen = set()
+        for trade in wallet_trades:
+            
+            if trade.get("quote", {}).get("symbol") == "SOL":
+                token = trade.get("base", {})
+                base = trade.get("quote", {})
+            else:
+                token = trade.get("quote", {})
+                base = trade.get("base", {})
+            
+            # If base is not SOL we ignore it for now
+            if base.get("symbol") != "SOL":
+                continue
+
+            token_address = token.get("address", "")
+            pool_address = trade.get("address", "")
+
+            if token_address and pool_address:
+                # Append if not already present
+                if pool_address not in tokens_seen:
+                    tokens.append({
+                        "mint_address": token_address,
+                        "pair_address": pool_address,
+                        "symbol": token.get("symbol", ""),
+                        "volume_usd": trade.get("volume_usd", 0),
+                        "block_number": trade.get("block_number", 0)
+                    })
+                    tokens_seen.add(pool_address)
+        return tokens
+
+    def _birdeye_get_wallet_pnl(self, wallet_address: str, tokens: List[str]) -> Optional[List[dict]]:
         """
         Get the wallet PnL (Profit and Loss) information for a specific wallet from the Birdeye API.
         @see https://docs.birdeye.so/reference/get-wallet-v2-pnl
@@ -721,6 +838,22 @@ class SolanaTokenSummary:
         if not data.get("data"):
             return None
         return data["data"]['tokens']
+
+    def _birdeye_get_wallet_profit_on_token(self, wallet_address: str, token_address: str) -> Optional[float]:
+        """
+        Get the profit/loss information for a specific token in a wallet from the Birdeye API.
+
+        Args:
+            wallet_address (str): The public key of the wallet.
+            token_address (str): The address of the token.
+
+        Returns:
+            Optional[dict]: The profit/loss data, or None on failure.
+        """
+        pnl_data = self._birdeye_get_wallet_pnl(wallet_address, [token_address])
+        if not pnl_data:
+            return None
+        return float(pnl_data.get(token_address, {}).get("pnl", {}).get("realized_profit_usd", 0))
 
     def _birdeye_get_token_supply(self, mint_address: str) -> float:
         """
