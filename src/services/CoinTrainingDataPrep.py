@@ -2,6 +2,7 @@ import os
 import json
 import pandas as pd
 import hashlib
+import re
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -25,6 +26,7 @@ class CoinTrainingDataPrep:
     Parser for preparing training data for a given coin pair on Solana.
     """
     def __init__(self):
+        self.storage_dir = AppData().get_config("permanent_storage_dir")
         self.app_data = AppData()
         self.bitquery = BitQuerySolana()
         self.solana = SolanaTokenSummary()
@@ -235,13 +237,80 @@ class CoinTrainingDataPrep:
             df_hash = self.hash_dataframe(df_merged)
 
             number_of_rows = df_merged.shape[0]
-            coin_name = df_merged['bq_trade_currency_symbol'].iloc[0]
-            file_name = f"ctd_raw_{coin_name}_{pair_address}_{latest_block_time}_{df_hash}_{number_of_rows}.parquet"
+            coin_symbol = df_merged['bq_trade_currency_symbol'].iloc[0]
+            file_name = f"ctd_raw_{coin_symbol}_{pair_address}_{latest_block_time}_{df_hash}_{number_of_rows}.parquet"
 
             self.store_data(df_merged, file_name)
 
         return df_merged
+    
 
+    @cache_handler.cache(ttl_s=1)
+    def list_available_raw_training_metadata(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieve the available training data for a specific token symbol.
+
+        Args:
+            symbol (Optional[str]): The token symbol to filter by. If None, return all.
+
+        Returns:
+            List[Dict[str, Any]]: A list of dictionaries containing metadata about the available training data.
+        """
+        available_data = []
+        for filename in os.listdir(self.storage_dir):
+            if not filename.endswith(".parquet"):
+                continue
+            if not filename.startswith("ctd_raw_"):
+                continue
+
+            # decode the filename
+            try:
+                file_info = self.decode_name(filename)
+            except ValueError:
+                continue  # skip unexpected files
+
+            # apply filter if symbol is provided
+            if symbol is None or file_info["symbol"] == symbol:
+                # Add other information
+                file_info["location"] = self.storage_dir + "/" + file_info["filename"]
+                file_info["modified_timestamp"] = os.path.getmtime(file_info["location"])
+
+                available_data.append(file_info)
+
+        return available_data
+
+    def get_raw_training_df(self, pair_address: str, filename: str) -> pd.DataFrame:
+        """
+        Retrieve the raw training DataFrame for a specific pair address.
+
+        Args:
+            pair_address (str): The pair address to filter by.
+            filename (str): The filename of the parquet file.
+
+        Returns:
+            pd.DataFrame: The raw training DataFrame for the specified pair address.
+        """
+        # If filename is provided, use it to locate the file
+        # Or use the pair_address to find the corresponding file
+        if filename:
+            location = os.path.join(self.storage_dir, filename)
+            if os.path.exists(location):
+                return pd.read_parquet(location)
+
+        # If not found, try to find by pair_address
+        metadata = self.list_available_raw_training_metadata()
+        for item in metadata:
+            if item["pair_address"] == pair_address:
+                return pd.read_parquet(item["location"])
+
+        # If not found, return an empty DataFrame
+        return pd.DataFrame()
+    
+    
+    # --------------------------
+    # File Operations
+    # --------------------------
+    
     def store_data(self,
             data: pd.DataFrame,
             filename: str,
@@ -256,16 +325,50 @@ class CoinTrainingDataPrep:
             replace (bool): Whether to replace the file if it exists.
         """
         # Make sure the storage directory exists
-        storage_dir = self.app_data.get_config("permanent_storage_dir")
-        if not os.path.exists(storage_dir):
-            os.makedirs(storage_dir)
+        if not os.path.exists(self.storage_dir):
+            os.makedirs(self.storage_dir)
 
-        if not replace and os.path.exists(os.path.join(storage_dir, filename)):
+        if not replace and os.path.exists(os.path.join(self.storage_dir, filename)):
             return
 
-        data.to_parquet(os.path.join(storage_dir, filename), index=False)
+        data.to_parquet(os.path.join(self.storage_dir, filename), index=False)
         _log(f"File {filename} saved successfully.")
+        
+    # --------------------------
+    # Utils
+    # --------------------------
+    
+    def decode_name(self, filename: str) -> dict:
+        """
+        Decode a stored parquet filename into its components.
 
+        Expected format:
+        ctd_raw_{symbol}_{pair_address}_{latest_block_time}_{df_hash}_{number_of_rows}.parquet
+        """
+        # Remove extension if present
+        og_filename = filename
+        if filename.endswith(".parquet"):
+            filename = filename[:-8]
+
+        # Regex for safe extraction
+        pattern = r"^ctd_raw_(.+?)_([A-Za-z0-9]+)_(\d{8}_\d{6})_([0-9a-f]+)_(\d+)$"
+        match = re.match(pattern, filename)
+        if not match:
+            raise ValueError(f"Filename does not match expected format: {filename}")
+
+        symbol, pair_address, latest_block_time, df_hash, number_of_rows = match.groups()
+        block_time = datetime.strptime(latest_block_time, "%Y%m%d_%H%M%S")
+        block_timestamp = block_time.replace(tzinfo=timezone.utc).timestamp()
+
+        return {
+            "symbol": symbol,
+            "pair_address": pair_address,
+            "latest_block_timestamp": block_timestamp,
+            "df_hash": df_hash,
+            "number_of_rows": int(number_of_rows),
+            "filename": og_filename,
+        }
+    
     def hash_dataframe(self, df: pd.DataFrame) -> str:
         """
         Generates a SHA256 hash for a pandas DataFrame.

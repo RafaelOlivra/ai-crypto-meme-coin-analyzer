@@ -60,6 +60,19 @@ def test_birdeye_get_wallet_overview():
     assert isinstance(wallet_info, dict)
     assert "net_worth" in wallet_info
 
+
+def test_birdeye_get_wallet_pnl():
+    solana = SolanaTokenSummary()
+    pnl_info = solana._birdeye_get_wallet_pnl(
+        TEST_WALLET_ADDRESS,
+        ['So11111111111111111111111111111111111111112']
+    )
+    _log("Wallet PnL:", pnl_info)
+    assert isinstance(pnl_info, dict)
+    for token in pnl_info:
+        assert "symbol" in pnl_info[token]
+        assert "pnl" in pnl_info[token]
+
 def test_birdeye_get_token_supply():
     solana = SolanaTokenSummary()
     token_supply = solana._birdeye_get_token_supply(TEST_TOKEN_ADDRESS)
@@ -73,6 +86,7 @@ def test_birdeye_get_mint_from_pair():
     _log("Mint Address from Pair:", mint_address)
     assert isinstance(mint_address, str)
     assert mint_address == TEST_TOKEN_ADDRESS
+    
 
 ## Solscan
 
@@ -98,6 +112,13 @@ def test_solscan_get_wallet_created_pools():
     _log("Created Pools Solscan:", len(created_pools))
     assert isinstance(created_pools, list)
     assert len(created_pools) >= 1
+
+def test_solscan_get_wallet_portfolio():
+    solana = SolanaTokenSummary()
+    portfolio = solana._solscan_get_wallet_portfolio(TEST_WALLET_ADDRESS)
+    _log("Wallet Portfolio Solscan:", portfolio)
+    assert isinstance(portfolio, list)
+    assert len(portfolio) >= 1
 
 ## Dexscreener
 
