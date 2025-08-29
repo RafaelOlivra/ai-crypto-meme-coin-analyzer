@@ -42,7 +42,7 @@ class SimpleBatchRequester:
             if cache_time != None:
                 cached_result = cache_handler.get(cache_hash)
                 if cached_result is not None:
-                    # _log(f"Cache hit for {request_data.get('url')}", level="DEBUG")
+                    print(f"[BatchRequest] Cache hit for {request_data.get('url')}")
                     return cached_result
 
             response = requests.request(
@@ -89,6 +89,7 @@ class SimpleBatchRequester:
                   Example: [{'index': 0, 'id': 1, 'result': {...}}, ...]
         """
         results = [None] * len(requests_list)
+        failed_requests = []
         
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_index = {
@@ -97,6 +98,17 @@ class SimpleBatchRequester:
             }
             for future in future_to_index:
                 result = future.result()
-                results[result['index']] = result
+                try:
+                    results[result['index']] = result
+                except Exception as e:
+                    print(f"[BatchRequest] Error processing result for index {result['index']}: {e}")
+                    failed_requests.append(result['index'])
+
+        # Retry failed requests
+        if failed_requests:
+            print(f"[BatchRequest] Retrying failed requests: {failed_requests}")
+            retry_results = self.run([requests_list[i] for i in failed_requests])
+            for retry_result in retry_results:
+                results[retry_result['index']] = retry_result
 
         return results
