@@ -3,6 +3,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from services.logger.Logger import _log
+from lib.LocalCache import cache_handler
+from lib.Utils import Utils
 
 class SimpleBatchRequester:
     def __init__(self, max_workers=5):
@@ -25,6 +27,10 @@ class SimpleBatchRequester:
             dict: A dictionary containing the request index and the result.
         """
         request_id = request_data.get('id') or request_index
+        cache_time = request_data.get('cache_time', None)
+        cache_hash = Utils.hash(request_data)
+        request_ok = False
+        
         try:
             method = request_data.get('method', 'GET').lower()
             url = request_data.get('url')
@@ -32,6 +38,12 @@ class SimpleBatchRequester:
             data = request_data.get('data')
             headers = request_data.get('headers')
             timeout = request_data.get('timeout', 10)
+            
+            if cache_time != None:
+                cached_result = cache_handler.get(cache_hash)
+                if cached_result is not None:
+                    _log(f"Cache hit for {request_data.get('url')}", level="DEBUG")
+                    return cached_result
 
             response = requests.request(
                 method,
@@ -42,15 +54,19 @@ class SimpleBatchRequester:
                 timeout=timeout
             )
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-            result = {
+            request_result = {
                 'status_code': response.status_code,
                 'content': response.json() if 'application/json' in response.headers.get('Content-Type', '') else response.text
             }
+            request_ok = True
         except requests.exceptions.RequestException as e:
             _log(f"Request failed for {request_data.get('url')}: {e}", level="ERROR")
-            result = {'error': str(e)}
+            request_result = {'error': str(e)}
 
-        return {'id': request_id, 'index': request_index, 'result': result}
+        request_result = {'id': request_id, 'index': request_index, 'result': request_result}
+        if cache_time is not None and request_ok:
+            cache_handler.set(cache_hash, request_result, ttl_s=cache_time)
+        return request_result
 
     def run(self, requests_list):
         """

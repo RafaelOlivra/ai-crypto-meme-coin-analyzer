@@ -31,13 +31,15 @@ def compute_metrics(combined_df):
 # ---------------------------
 def Page():
     CACHE_TTL = 60 * 60 * 1  # 1 hour
+    MAX_TRADES_TOKENS = 2000
+
     app_data = AppData()
     solana = SolanaTokenSummary()
 
     # Set page title
     st.set_page_config(page_title="Wallet Analytics", page_icon="💰", layout="wide")
 
-    st.title("💰 Wallet Analytics")
+    st.title("💰 Wallet Analytics") 
 
     wallet_address = st.text_input("Inform Wallet Address", value=app_data.get_state("wa_wallet_address") or "")
     if wallet_address != "":
@@ -60,33 +62,37 @@ def Page():
     # Prepare Data for Analysis
     #---------------------------------------
     
-    recent_tx = app_data.get_state("wa_wallet_tx")
+    recent_tx = app_data.get_state(f"wa_wallet_tx_${MAX_TRADES_TOKENS}")
     if not recent_tx:
         with st.spinner("Loading recent transactions (This may take a while)..."):
             recent_tx = solana._birdeye_get_wallet_trades(wallet_address)
-            app_data.set_state("wa_wallet_tx", recent_tx, CACHE_TTL)
+            app_data.set_state(f"wa_wallet_tx_${MAX_TRADES_TOKENS}", recent_tx, CACHE_TTL)
     
     if not recent_tx or len(recent_tx) == 0:
         st.info("No recent transactions found for this wallet.")
         return
     df_recent_tx = pd.DataFrame(recent_tx)
     
-    recent_traded_tokens = app_data.get_state("wa_wallet_traded_tokens")
+    recent_traded_tokens = app_data.get_state(f"wa_wallet_traded_tokens_${MAX_TRADES_TOKENS}")
     if not recent_traded_tokens:
         with st.spinner("Loading recent traded tokens (This may take a while)..."):
-            recent_traded_tokens = solana._birdeye_get_wallet_traded_tokens(wallet_address, max_trades=100)
-            app_data.set_state("wa_wallet_traded_tokens", recent_traded_tokens, CACHE_TTL)
+            recent_traded_tokens = solana._birdeye_get_wallet_traded_tokens(wallet_address, max_trades=MAX_TRADES_TOKENS)
+            app_data.set_state(f"wa_wallet_traded_tokens_${MAX_TRADES_TOKENS}", recent_traded_tokens, CACHE_TTL)
 
     if not recent_traded_tokens or len(recent_traded_tokens) == 0:
         st.info("No recent traded tokens found for this wallet.")
         return
     df_recent_traded_tokens = pd.DataFrame(recent_traded_tokens)
+    
+    
+    
+    
 
-    recent_pnls = app_data.get_state("wa_wallet_pnls")
+    recent_pnls = app_data.get_state(f"wa_wallet_pnls_${MAX_TRADES_TOKENS}")
     if recent_pnls is None:
         with st.spinner("Retrieving PnL for recent transactions (This may take a while)..."):
             recent_pnls = solana._birdeye_get_wallet_tokens_pnl(wallet_address, recent_traded_tokens)
-            app_data.set_state("wa_wallet_pnls", recent_pnls, CACHE_TTL)
+            app_data.set_state(f"wa_wallet_pnls_${MAX_TRADES_TOKENS}", recent_pnls, CACHE_TTL)
 
     if recent_pnls is None:
         st.info("No PnL data found for this wallet's recent transactions.")
@@ -128,13 +134,13 @@ def Page():
     
     
     
-    tokens_meta = app_data.get_state("wa_tokens_meta")
+    tokens_meta = app_data.get_state(f"wa_tokens_meta_${MAX_TRADES_TOKENS}")
     if not tokens_meta:
         tokens_meta = {}
         with st.spinner("Loading token metadata (This may take a while)..."):
             mint_addresses = df_recent_pnls['mint_address'].unique().tolist()
             tokens_meta = solana._dexscreener_get_tokens_meta(mint_addresses)
-            app_data.set_state("wa_tokens_meta", tokens_meta, CACHE_TTL)
+            app_data.set_state(f"wa_tokens_meta_${MAX_TRADES_TOKENS}", tokens_meta, CACHE_TTL)
 
     if not tokens_meta:
         st.info("No token metadata found.")
@@ -153,29 +159,29 @@ def Page():
     socials_df.drop(columns=["name", "symbol", "decimals"], inplace=True, errors='ignore')
 
     # merge the social_df with the analysis DataFrame
-    df_recent_pnls_merged = df_recent_pnls.merge(socials_df, on="mint_address", how="left")
+    df_analysis = df_recent_pnls.merge(socials_df, on="mint_address", how="left")
     
     
     
     # Add developer info (creator)
-    mint_addresses = df_recent_pnls_merged["mint_address"].unique().tolist()
+    mint_addresses = df_analysis["mint_address"].unique().tolist()
 
-    tokens_security_info = app_data.get_state("wa_tokens_security_info")
+    tokens_security_info = app_data.get_state(f"wa_tokens_security_info_${MAX_TRADES_TOKENS}")
     if not tokens_security_info:
         tokens_security_info = solana._birdeye_get_tokens_security(mint_addresses)
 
     for mint_address, security_info in tokens_security_info.items():
         creator = security_info.get("creatorAddress", "")
-        df_recent_pnls_merged.loc[df_recent_pnls_merged["mint_address"] == mint_address, "developer_address"] = creator
+        df_analysis.loc[df_analysis["mint_address"] == mint_address, "developer_address"] = creator
 
     # Add created pools info
-    developer_created_pools = app_data.get_state("wa_developer_created_pools")
+    developer_created_pools = app_data.get_state(f"wa_developer_created_pools_${MAX_TRADES_TOKENS}")
     developer_created_pools = None
     if not developer_created_pools:
-        developer_created_pools = solana._solscan_get_wallets_created_pools(df_recent_pnls_merged['developer_address'].dropna().unique().tolist())
+        developer_created_pools = solana._solscan_get_wallets_created_pools(df_analysis['developer_address'].dropna().unique().tolist())
 
     for developer, pools in developer_created_pools.items():
-        df_recent_pnls_merged.loc[df_recent_pnls_merged["developer_address"] == developer, "developer_total_tokens_created"] = len(pools)
+        df_analysis.loc[df_analysis["developer_address"] == developer, "developer_total_tokens_created"] = len(pools)
 
     #---------------------------------------
     # Output the Analysis Results
@@ -183,11 +189,11 @@ def Page():
     
     # Coins Analyzed
     
-    st.write(f"#### {len(df_recent_pnls_merged)} Coins Analyzed:")
-    st.dataframe(df_recent_pnls_merged, use_container_width=True)
+    st.write(f"#### {len(df_analysis)} Coins Analyzed:")
+    st.dataframe(df_analysis, use_container_width=True)
     
     # Profit and Loss
-    st.metric("Total PnL", f"${df_recent_pnls_merged['net_profit_usd'].sum():,.2f}")
+    st.metric("Total PnL", f"${df_analysis['net_profit_usd'].sum():,.2f}")
 
     #---------------------------------------
     # Social Analysis
@@ -199,30 +205,30 @@ def Page():
     # Always ensure required social columns exist
     required_cols_fix = ['discord', 'twitter', 'instagram', 'facebook']
     for col in required_cols_fix:
-        if col not in df_recent_pnls_merged.columns:
-            df_recent_pnls_merged[col] = ""
+        if col not in df_analysis.columns:
+            df_analysis[col] = ""
 
     # Assuming socials_df is your DataFrame
     socials_to_analyze = list(socials_df.columns)
-    socials_to_analyze = [c for c in df_recent_pnls_merged.columns if c not in ["website"] and c in required_cols_fix]
+    socials_to_analyze = [c for c in df_analysis.columns if c not in ["website"] and c in required_cols_fix]
 
     # Total unique tokens
-    total_coins = len(df_recent_pnls_merged)
+    total_coins = len(df_analysis)
 
     # Check if website is valid (not null, empty, or "NULL")
-    df_recent_pnls_merged["has_website"] = df_recent_pnls_merged["website"].notna() & (df_recent_pnls_merged["website"].str.strip() != "") & (df_recent_pnls_merged["website"].str.upper() != "NULL")
-    count_coins_with_websites = df_recent_pnls_merged["has_website"].sum()
+    df_analysis["has_website"] = df_analysis["website"].notna() & (df_analysis["website"].str.strip() != "") & (df_analysis["website"].str.upper() != "NULL")
+    count_coins_with_websites = df_analysis["has_website"].sum()
 
     # Check if any social is valid per row
     socials_only = [s for s in socials_to_analyze if s != "website"]
-    df_recent_pnls_merged["has_social"] = df_recent_pnls_merged[socials_only].apply(
+    df_analysis["has_social"] = df_analysis[socials_only].apply(
         lambda row: any((str(v).strip() not in ["", "NULL", "None", "nan"]) for v in row), axis=1
     )
-    count_coins_with_socials = df_recent_pnls_merged["has_social"].sum()
+    count_coins_with_socials = df_analysis["has_social"].sum()
 
     # Count per social type
     count_socials = {
-        social: ((df_recent_pnls_merged[social].notna()) & (df_recent_pnls_merged[social].astype(str).str.strip().isin(["", "NULL", "None", "nan"]) == False)).sum()
+        social: ((df_analysis[social].notna()) & (df_analysis[social].astype(str).str.strip().isin(["", "NULL", "None", "nan"]) == False)).sum()
         for social in socials_to_analyze
     }
     
@@ -245,27 +251,27 @@ def Page():
     st.write("#### PnL Analysis by Social Presence")
 
     # 1. Tokens with no social links (neither website nor socials)
-    df_no_socials = df_recent_pnls_merged[~df_recent_pnls_merged["has_website"] & ~df_recent_pnls_merged["has_social"]]
+    df_no_socials = df_analysis[~df_analysis["has_website"] & ~df_analysis["has_social"]]
     total_pnl_no_socials = df_no_socials['net_profit_usd'].sum()
     count_no_socials = len(df_no_socials)
     avg_pnl_no_socials = total_pnl_no_socials / count_no_socials if count_no_socials > 0 else 0
 
     # 2. Tokens with at least one social link (social or website)
-    df_with_any_social = df_recent_pnls_merged[df_recent_pnls_merged["has_website"] | df_recent_pnls_merged["has_social"]]
+    df_with_any_social = df_analysis[df_analysis["has_website"] | df_analysis["has_social"]]
     total_pnl_with_any_social = df_with_any_social['net_profit_usd'].sum()
     count_with_any_social = len(df_with_any_social)
     avg_pnl_with_any_social = total_pnl_with_any_social / count_with_any_social if count_with_any_social > 0 else 0
 
     # 3. Tokens with just a website (no other socials)
-    df_website_only = df_recent_pnls_merged[df_recent_pnls_merged["has_website"] & ~df_recent_pnls_merged["has_social"]]
+    df_website_only = df_analysis[df_analysis["has_website"] & ~df_analysis["has_social"]]
     total_pnl_website_only = df_website_only['net_profit_usd'].sum()
     count_website_only = len(df_website_only)
     avg_pnl_website_only = total_pnl_website_only / count_website_only if count_website_only > 0 else 0
 
     # 4. Tokens with a website and a Twitter link
-    df_website_and_twitter = df_recent_pnls_merged[
-        (df_recent_pnls_merged["has_website"]) & 
-        (df_recent_pnls_merged["twitter"].notna() & (df_recent_pnls_merged["twitter"].str.strip() != "") & (df_recent_pnls_merged["twitter"].str.upper() != "NULL"))
+    df_website_and_twitter = df_analysis[
+        (df_analysis["has_website"]) & 
+        (df_analysis["twitter"].notna() & (df_analysis["twitter"].str.strip() != "") & (df_analysis["twitter"].str.upper() != "NULL"))
     ]
     total_pnl_website_and_twitter = df_website_and_twitter['net_profit_usd'].sum()
     count_website_and_twitter = len(df_website_and_twitter)
@@ -273,10 +279,10 @@ def Page():
 
     # 5. Tokens with only a Twitter link (no website)
     # This requires checking that the website column is empty/invalid AND the twitter column is valid.
-    df_twitter_only = df_recent_pnls_merged[
-        ~df_recent_pnls_merged["has_website"] &
-        (df_recent_pnls_merged["twitter"].notna() & (df_recent_pnls_merged["twitter"].str.strip() != "") & (df_recent_pnls_merged["twitter"].str.upper() != "NULL")) &
-        df_recent_pnls_merged[[s for s in socials_only if s != 'twitter']].apply(
+    df_twitter_only = df_analysis[
+        ~df_analysis["has_website"] &
+        (df_analysis["twitter"].notna() & (df_analysis["twitter"].str.strip() != "") & (df_analysis["twitter"].str.upper() != "NULL")) &
+        df_analysis[[s for s in socials_only if s != 'twitter']].apply(
             lambda row: not any((str(v).strip() not in ["", "NULL", "None", "nan"]) for v in row), axis=1
         )
     ]
@@ -287,22 +293,49 @@ def Page():
     # ---- Output in Streamlit ----
 
     col1, col2 = st.columns(2)
-    col1.metric("Avg. PnL (No Socials)", f"{avg_pnl_no_socials:.2f} USD")
-    col2.metric("Avg. PnL (With Socials/Website)", f"{avg_pnl_with_any_social:.2f} USD")
+    col1.metric("Avg. PnL (No Socials)", f"$ {avg_pnl_no_socials:.2f}")
+    col2.metric("Avg. PnL (With Socials/Website)", f"$ {avg_pnl_with_any_social:.2f}")
 
     col1, col2 = st.columns(2)
-    col1.metric("Avg. PnL (Website Only)", f"{avg_pnl_website_only:.2f} USD")
-    col2.metric("Avg. PnL (Website + Twitter)", f"{avg_pnl_website_and_twitter:.2f} USD")
+    col1.metric("Avg. PnL (Website Only)", f"$ {avg_pnl_website_only:.2f}")
+    col2.metric("Avg. PnL (Website + Twitter)", f"$ {avg_pnl_website_and_twitter:.2f} ")
 
     col1, col2 = st.columns(2)
-    col1.metric("Avg. PnL (Twitter Only)", f"{avg_pnl_twitter_only:.2f} USD")
-    
-    
+    col1.metric("Avg. PnL (Twitter Only)", f"$ {avg_pnl_twitter_only:.2f}")
+
+
     #---------------------------------------
     # Dev Influence
     #---------------------------------------
     st.write("---")
 
+    df_dev_analysis_dev = df_analysis[df_analysis["developer_total_tokens_created"].notna()]
+    df_dev_analysis_dev_1 = df_dev_analysis_dev[df_dev_analysis_dev["developer_total_tokens_created"] == 1]
+    df_dev_analysis_dev_up_to_5 = df_dev_analysis_dev[df_dev_analysis_dev["developer_total_tokens_created"] <= 5]
+    df_dev_analysis_dev_up_more = df_dev_analysis_dev[df_dev_analysis_dev["developer_total_tokens_created"] > 5]
+    count_rows_without_dev = df_analysis[df_analysis["developer_total_tokens_created"].isna()].shape[0]
+
+    # --- Dev Proficiency
+
+    st.write("#### Developer Proficiency")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Unique Developers", df_dev_analysis_dev.shape[0])
+    col2.metric("Devs without Tokens (IGNORED)", count_rows_without_dev)
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Devs with 1 Token", df_dev_analysis_dev_1.shape[0])
+    col2.metric("Devs with 1-5 Tokens", df_dev_analysis_dev_up_to_5.shape[0])
+    col3.metric("Devs with 5+ Tokens", df_dev_analysis_dev_up_more.shape[0])
+
+    # --- PnL by Dev Proficiency
+
+    st.write("#### PnL Analysis by Developer Proficiency")
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Avg. PnL (when Dev 1 Token)", f"$ {df_dev_analysis_dev_1['net_profit_usd'].mean():,.2f}")
+    col2.metric("Avg. PnL (when Dev 1-5 Tokens)", f"$ {df_dev_analysis_dev_up_to_5['net_profit_usd'].mean():,.2f}")
+    col3.metric("Avg. PnL (when Dev 5+ Tokens)", f"$ {df_dev_analysis_dev_up_more['net_profit_usd'].mean():,.2f}")
 
 # --------------------------
 # INIT

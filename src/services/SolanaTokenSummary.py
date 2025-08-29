@@ -19,6 +19,7 @@ from lib.SimpleBatchRequester import SimpleBatchRequester
 DEFAULT_CACHE_TTL = 300
 RPC_CACHE_TTL = 2
 MINUTE_IN_SECONDS = 60
+HOUR_IN_SECONDS = 60 * 60
 DAY_IN_SECONDS = 60 * 60 * 24
 
 class SolanaTokenSummary:
@@ -729,11 +730,11 @@ class SolanaTokenSummary:
             dict: A dictionary mapping each mint address to its token summary.
         """
         try:
-            batch_requester = SimpleBatchRequester(max_workers=3)
+            batch_requester = SimpleBatchRequester(max_workers=2)
             batch = []
             for mint in mint_addresses:
                 batch.append(
-                    {"id": mint, "url": f"https://api.dexscreener.com/latest/dex/tokens/{mint}", "timeout": 10}
+                    {"id": mint, "cache_time": 3600, "url": f"https://api.dexscreener.com/latest/dex/tokens/{mint}", "timeout": 10}
                 )
 
             responses = batch_requester.run(batch)
@@ -857,6 +858,7 @@ class SolanaTokenSummary:
             return None
         return data["data"]
 
+    @cache_handler.cache(ttl_s=HOUR_IN_SECONDS, invalidate_if_return=None)
     def _birdeye_get_wallet_trades(
         self,
         wallet_address: str,
