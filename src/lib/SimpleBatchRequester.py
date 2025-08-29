@@ -42,7 +42,7 @@ class SimpleBatchRequester:
             if cache_time != None:
                 cached_result = cache_handler.get(cache_hash)
                 if cached_result is not None:
-                    _log(f"Cache hit for {request_data.get('url')}", level="DEBUG")
+                    # _log(f"Cache hit for {request_data.get('url')}", level="DEBUG")
                     return cached_result
 
             response = requests.request(
