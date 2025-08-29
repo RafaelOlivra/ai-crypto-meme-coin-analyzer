@@ -1144,6 +1144,7 @@ class SolanaTokenSummary:
                     "headers": headers,
                     "params": params,
                     "timeout": 30,
+                    "cache_time": 300  # Cache for 5 minutes
                 })
 
             responses = batch_requester.run(batch)
