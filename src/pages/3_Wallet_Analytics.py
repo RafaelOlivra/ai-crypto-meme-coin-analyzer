@@ -31,7 +31,7 @@ def compute_metrics(combined_df):
 # ---------------------------
 def Page():
     CACHE_TTL = 60 * 60 * 1  # 1 hour
-    MAX_TRADES_TOKENS = 1000
+    MAX_TRADES_TOKENS = 1500
 
     app_data = AppData()
     solana = SolanaTokenSummary()

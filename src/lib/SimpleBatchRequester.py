@@ -1,3 +1,4 @@
+import time
 import requests
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -107,6 +108,7 @@ class SimpleBatchRequester:
         # Retry failed requests
         if failed_requests:
             print(f"[BatchRequest] Retrying failed requests: {failed_requests}")
+            time.sleep(0.2)  # Wait for a moment before retrying
             retry_results = self.run([requests_list[i] for i in failed_requests])
             for retry_result in retry_results:
                 results[retry_result['index']] = retry_result
