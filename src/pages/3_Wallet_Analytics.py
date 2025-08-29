@@ -158,13 +158,24 @@ def Page():
     
     
     # Add developer info (creator)
-    tokens_developers = app_data.get_state("wa_tokens_developers")
-    if not tokens_developers:
-        mint_addresses = df_recent_pnls_merged["mint_address"].unique().tolist()
+    mint_addresses = df_recent_pnls_merged["mint_address"].unique().tolist()
+
+    tokens_security_info = app_data.get_state("wa_tokens_security_info")
+    if not tokens_security_info:
         tokens_security_info = solana._birdeye_get_tokens_security(mint_addresses)
-        for mint_address, security_info in tokens_security_info.items():
-            creator = security_info.get("creatorAddress", "")
-            df_recent_pnls_merged.loc[df_recent_pnls_merged["mint_address"] == mint_address, "developer_address"] = creator
+
+    for mint_address, security_info in tokens_security_info.items():
+        creator = security_info.get("creatorAddress", "")
+        df_recent_pnls_merged.loc[df_recent_pnls_merged["mint_address"] == mint_address, "developer_address"] = creator
+
+    # Add created pools info
+    developer_created_pools = app_data.get_state("wa_developer_created_pools")
+    developer_created_pools = None
+    if not developer_created_pools:
+        developer_created_pools = solana._solscan_get_wallets_created_pools(df_recent_pnls_merged['developer_address'].dropna().unique().tolist())
+
+    for developer, pools in developer_created_pools.items():
+        df_recent_pnls_merged.loc[df_recent_pnls_merged["developer_address"] == developer, "developer_total_tokens_created"] = len(pools)
 
     #---------------------------------------
     # Output the Analysis Results
@@ -181,6 +192,7 @@ def Page():
     #---------------------------------------
     # Social Analysis
     #---------------------------------------
+    st.write("---")
 
     # --- Social Presence
     
@@ -284,6 +296,12 @@ def Page():
 
     col1, col2 = st.columns(2)
     col1.metric("Avg. PnL (Twitter Only)", f"{avg_pnl_twitter_only:.2f} USD")
+    
+    
+    #---------------------------------------
+    # Dev Influence
+    #---------------------------------------
+    st.write("---")
 
 
 # --------------------------

@@ -160,6 +160,18 @@ def test_solscan_get_wallet_created_pools():
     _log("Created Pools Solscan:", len(created_pools))
     assert isinstance(created_pools, list)
     assert len(created_pools) >= 1
+    
+def test_solscan_get_wallets_created_pools():
+    solana = SolanaTokenSummary()
+    created_pools = solana._solscan_get_wallets_created_pools(
+        [TEST_TOKEN_ADDRESS, TEST_WALLET_ADDRESS_2]
+    )
+    _log("Created Pools Solscan:", len(created_pools))
+    assert isinstance(created_pools, dict)
+    assert len(created_pools) >= 1
+    assert len(created_pools[TEST_TOKEN_ADDRESS]) >= 1
+    for pool in created_pools.values():
+        assert isinstance(pool, list)
 
 def test_solscan_get_wallet_portfolio():
     solana = SolanaTokenSummary()

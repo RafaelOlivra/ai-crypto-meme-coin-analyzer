@@ -790,7 +790,6 @@ class SolanaTokenSummary:
         Returns:
             Optional[dict]: A dictionary mapping each mint address to its security data, or None on failure.
         """
-
         params = [{"address": mint} for mint in mint_addresses]
         output = {}
         items = self._birdeye_fetch_batch("defi/token_security", params)
@@ -1266,6 +1265,35 @@ class SolanaTokenSummary:
             return None
 
         return data.get("data", data)
+
+    def _solscan_get_wallets_created_pools(self, wallet_addresses: List[str]) -> dict:
+        """
+        Gets the pools created by multiple wallets from the Solscan Pro API.
+
+        Args:
+            wallet_addresses (List[str]): The list of wallet addresses.
+
+        Returns:
+            Optional[dict]: A list of pools created by the wallets, or None if not found.
+        """
+        params = [{
+            "address": address,
+            "sort_by": "block_time",
+            "sort_order": "desc",
+            "activity_type[]": "ACTIVITY_POOL_CREATE"
+        } for address in wallet_addresses]
+        output = {}
+        items = self._solscan_fetch_batch("account/defi/activities", params)
+        if not items:
+            return {}
+        for address, item in items.items():
+            if item.get("data"):
+                output[address] = item["data"]
+            else:
+                output[address] = []
+                _log(f"Solscan fetch failed for wallet {address}", item, level="ERROR")
+        return output
+
 
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return={})
     def _solscan_fetch(self, method: str, params: Optional[dict] = None) -> dict:
