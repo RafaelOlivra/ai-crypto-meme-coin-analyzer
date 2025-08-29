@@ -14,11 +14,12 @@ from services.AppData import AppData
 from lib.LocalCache import cache_handler
 from lib.Utils import Utils
 from services.logger.Logger import _log
+from lib.SimpleBatchRequester import SimpleBatchRequester
 
 DEFAULT_CACHE_TTL = 300
 RPC_CACHE_TTL = 2
 MINUTE_IN_SECONDS = 60
-DAYS_IN_SECONDS = 24 * 60 * 60
+DAY_IN_SECONDS = 60 * 60 * 24
 
 class SolanaTokenSummary:
     """
@@ -61,7 +62,7 @@ class SolanaTokenSummary:
     # Solana RPC info
     # --------------------------
 
-    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
+    @cache_handler.cache(ttl_s=DAY_IN_SECONDS)
     def _rpc_get_mint_info(self, mint_address: str) -> Optional[dict]:
         """
         Retrieves mint account information from a Solana RPC node.
@@ -127,7 +128,7 @@ class SolanaTokenSummary:
         """
         return mint_info.get("mintAuthority") is None
     
-    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
+    @cache_handler.cache(ttl_s=DAY_IN_SECONDS)
     def _rpc_estimate_wallet_age(self, wallet_address: str) -> int:
         """
         Estimates the wallet age for a single wallet address by finding
@@ -147,7 +148,7 @@ class SolanaTokenSummary:
             age = -1
         return age
     
-    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
+    @cache_handler.cache(ttl_s=DAY_IN_SECONDS)
     def _rpc_estimate_wallet_ages(self, wallet_addresses: List[str]) -> List[int]:
         """
         A synchronous entry point to estimate the age of a list of wallets.
@@ -233,7 +234,7 @@ class SolanaTokenSummary:
                 
         return task_results
 
-    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS, invalidate_if_return=-1)
+    @cache_handler.cache(ttl_s=DAY_IN_SECONDS, invalidate_if_return=-1)
     async def _rpc_estimate_wallet_age_async(self, wallet_address: str, rpc_url: Optional[str] = None) -> int:
         """
         Asynchronously gets the wallet age (days since first transaction) by
@@ -574,20 +575,81 @@ class SolanaTokenSummary:
     # Dexscreener Info
     # --------------------------
 
-    def _dexscreener_get_token_info(self, mint_address: str) -> Optional[dict]:
+    @cache_handler.cache(ttl_s=DAY_IN_SECONDS * 5, invalidate_if_return = {})
+    def _dexscreener_get_token_meta(self, mint_address: str) -> dict:
         """
-        Retrieves all pairs associated with a token from Dexscreener.
+        Retrieves token metadata from Dexscreener.
 
         Args:
             mint_address (str): The token's mint address.
 
         Returns:
-            Optional[dict]: A list of all pairs found for the token.
+            Optional[dict]: The token metadata, or None if not found.
         """
-        data = self._dexscreener_fetch(mint_address)
-        return data.get("pairs", [])
+        tokens_meta = self._dexscreener_get_tokens_meta([mint_address])
+        return tokens_meta.get(mint_address)
 
-    def _dexscreener_get_token_pair_info(self, mint_address: str, pair_address: str) -> Optional[dict]:
+    @cache_handler.cache(ttl_s=DAY_IN_SECONDS * 5, invalidate_if_return = {})
+    def _dexscreener_get_tokens_meta(self, mint_addresses: List[str]) -> dict:
+        """
+        Retrieves multiple token metadata from Dexscreener.
+
+        Args:
+            mint_addresses List[str]: The token's mint address.
+
+        Returns:
+            dict: A dictionary mapping each mint address to its token metadata.
+        """
+        tokens = self._dexscreener_get_tokens_info(mint_addresses)
+        _log(f"Dexscreener tokens info: {tokens}", level="DEBUG")
+        tokens_meta = {}
+        for mint in tokens:
+            data = tokens[mint]
+            
+            if not data or not data[0]:
+                return {}
+            
+            info = data[0]
+            
+            baseToken = info.get("baseToken", {})
+            if baseToken.get("symbol") == 'SOL':
+                baseToken = info.get("quoteToken", {})
+
+            socials = info.get("socials", [])
+            websites = info.get("websites", [])
+            
+            parsed_socials = {}
+            socials_to_analyze = ["twitter", "telegram", "discord", "facebook", "instagram", "linkedin"]
+            for social in socials:
+                if social.get("type") in socials_to_analyze:
+                    parsed_socials[social.get("type")] = social.get("url")
+
+            website = ""
+            for website in websites:
+                website = website.get("url")
+                break
+
+            website = ""
+            for website in websites:
+                website = website.get("url")
+                break
+
+            tokens_meta[mint] = {
+                "name": baseToken.get("name"),
+                "symbol": baseToken.get("symbol"),
+                "header": info.get("header"),
+                "image": info.get("imageUrl"),
+                "website": website,
+                "twitter": parsed_socials.get("twitter"),
+                "telegram": parsed_socials.get("telegram"),
+                "discord": parsed_socials.get("discord"),
+                "facebook": parsed_socials.get("facebook"),
+                "linkedin": parsed_socials.get("linkedin"),
+                "instagram": parsed_socials.get("instagram"),
+            }
+        return tokens_meta
+ 
+    def _dexscreener_get_pair_info(self, mint_address: str, pair_address: str) -> Optional[dict]:
         """
         Retrieves specific pair information from Dexscreener.
 
@@ -606,8 +668,39 @@ class SolanaTokenSummary:
                 return pair
         return None
     
+    def _dexscreener_get_token_info(self, mint_address: str) -> Optional[dict]:
+        """
+        Retrieves all pairs associated with a token from Dexscreener.
+
+        Args:
+            mint_address (str): The token's mint address.
+
+        Returns:
+            Optional[dict]: A list of all pairs found for the token.
+        """
+        data = self._dexscreener_fetch_token_summary(mint_address)
+        return data.get("pairs", [])
+
+    @cache_handler.cache(ttl_s=DAY_IN_SECONDS, invalidate_if_return = {})
+    def _dexscreener_get_tokens_info(self, mint_addresses: List[str]) -> dict:
+        """
+        Retrieves information for multiple tokens from Dexscreener.
+
+        Args:
+            mint_addresses (List[str]): A list of token mint addresses.
+
+        Returns:
+            dict: A dictionary mapping each mint address to its token information.
+        """
+        data = self._dexscreener_fetch_batch_token_summaries(mint_addresses)
+        tokens = {}
+        for mint, info in data.items():
+            if info:
+                tokens[mint] = info.get("pairs", {})
+        return tokens
+
     @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return = {})
-    def _dexscreener_fetch(self, mint_address: str) -> dict:
+    def _dexscreener_fetch_token_summary(self, mint_address: str) -> dict:
         """
         Fetches token data from the Dexscreener API.
 
@@ -617,13 +710,55 @@ class SolanaTokenSummary:
         Returns:
             dict: The JSON response from the API, or an empty dictionary on error.
         """
-        url = f"https://api.dexscreener.com/latest/dex/tokens/{mint_address}"
         try:
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
+            response = self._dexscreener_fetch_batch_token_summaries([mint_address])
+            return response.get(mint_address, {})
+        except Exception as e:
             _log(f"Dexscreener fetch error: {e}", level="ERROR")
+            return {}
+    
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return = {})
+    def _dexscreener_fetch_batch_token_summaries(self, mint_addresses: List[str]) -> dict:
+        """
+        Fetches token summaries for a batch of mint addresses from the Dexscreener API.
+
+        Args:
+            mint_addresses (List[str]): A list of mint addresses.
+
+        Returns:
+            dict: A dictionary mapping each mint address to its token summary.
+        """
+        try:
+            batch_requester = SimpleBatchRequester(max_workers=3)
+            batch = []
+            for mint in mint_addresses:
+                batch.append(
+                    {"id": mint, "url": f"https://api.dexscreener.com/latest/dex/tokens/{mint}", "timeout": 10}
+                )
+
+            responses = batch_requester.run(batch)
+            summaries = {}
+            for response in responses:
+                if response:
+                    mint = response.get("id")
+                    result = response.get("result")
+
+                    # Fail if any response is invalid
+                    if not result or result.get("status_code") != 200:
+                        _log(f"Dexscreener fetch failed for mint {mint}: {result}", level="ERROR")
+                        return {}
+                    content = result.get("content")
+                    
+                    # Fail if no pair data
+                    if not content.get("pairs"):
+                        _log(f"Dexscreener fetch no pairs for mint {mint}: {content}", level="ERROR")
+                        return {}
+
+                    summaries[mint] = content
+            return summaries
+
+        except requests.RequestException as e:
+            _log(f"Dexscreener fetch batch error: {e}", level="ERROR")
             return {}
 
     # --------------------------
@@ -643,6 +778,30 @@ class SolanaTokenSummary:
         """
         data = self._birdeye_fetch("defi/token_security", {"address": mint_address})
         return data.get("data") if data.get("success") else None
+
+    def _birdeye_get_tokens_security(self, mint_addresses: List[str]) -> Optional[dict]:
+        """
+        Get the security information for multiple tokens from the Birdeye API.
+        @see https://docs.birdeye.so/reference/get-defi-token_security
+
+        Args:
+            mint_addresses (List[str]): A list of mint addresses.
+
+        Returns:
+            Optional[dict]: A dictionary mapping each mint address to its security data, or None on failure.
+        """
+
+        params = [{"address": mint} for mint in mint_addresses]
+        output = {}
+        items = self._birdeye_fetch_batch("defi/token_security", params)
+        if not items:
+            return None
+        for address, item in items.items():
+            if item.get("data"):
+                output[address] = item["data"]
+            else:
+                _log(f"Birdeye fetch failed for mint {address}: {item['error']}", level="ERROR")
+        return output
 
     def _birdeye_get_token_overview(self, mint_address: str) -> Optional[dict]:
         """
@@ -764,14 +923,12 @@ class SolanaTokenSummary:
 
         # Crop the results to the maximum number of trades
         all_trades = all_trades[:max_trades]
-
         return all_trades if all_trades else None
         
-
     def _birdeye_get_wallet_traded_tokens(self,
                 wallet_address: str,
                 max_trades: int = 10_000
-        ) -> Optional[List[str]]:
+        ) -> Optional[List[dict]]:
         """
         Get a list of tokens that have been traded by a specific wallet from the Birdeye API.
 
@@ -811,16 +968,18 @@ class SolanaTokenSummary:
                         "pair_address": pool_address,
                         "symbol": token.get("symbol", ""),
                         "volume_usd": trade.get("volume_usd", 0),
-                        "block_number": trade.get("block_number", 0)
+                        "block_number": trade.get("block_number", 0),
+                        "block_timestamp": trade.get("block_unix_time", 0),
                     })
                     tokens_seen.add(pool_address)
         return tokens
 
-    def _birdeye_get_wallet_pnl(self, wallet_address: str, tokens: List[str]) -> Optional[List[dict]]:
+    def _birdeye_get_wallet_tokens_pnl(self, wallet_address: str, tokens: list) -> Optional[dict]:
         """
         Get the wallet PnL (Profit and Loss) information for a specific wallet from the Birdeye API.
+        Handles pagination for the token list, fetching 20 tokens at a time.
         @see https://docs.birdeye.so/reference/get-wallet-v2-pnl
-        
+
         Args:
             wallet_address (str): The public key of the wallet.
             tokens (list): A list of token addresses to include in the overview.
@@ -828,20 +987,49 @@ class SolanaTokenSummary:
         Returns:
             Optional[dict]: The wallet PnL data, or None on failure.
         """
-        data = self._birdeye_fetch(
-            "wallet/v2/pnl",
-            {
-                "wallet": wallet_address,
-                "token_addresses": tokens
-            }
-        )
-        if not data.get("data"):
-            return None
-        return data["data"]['tokens']
+        all_pnl_data = {}
+        chunk_size = 20
+
+        # Extract token addresses from the input list
+        token_addresses = set()
+        for token in tokens:
+            if isinstance(token, dict):
+                token_addresses.add(token.get("mint_address"))
+            else:
+                token_addresses.add(token)
+
+        # Convert the set to a list for easier slicing
+        token_address_list = list(token_addresses)
+
+        # Paginate through the tokens in chunks of 50
+        for i in range(0, len(token_address_list), chunk_size):
+            chunk = token_address_list[i:i + chunk_size]
+            
+            # Make the API call for the current chunk
+            data = self._birdeye_fetch(
+                "wallet/v2/pnl",
+                {
+                    "wallet": wallet_address,
+                    "token_addresses": ','.join(chunk)
+                }
+            )
+
+            # Check for successful response and add data to the overall list
+            if data.get("data") and data["data"].get("tokens"):
+                time = data["data"]["meta"]["time"]
+                tokens = data["data"]["tokens"]
+                for mint_address in tokens:
+                    tokens[mint_address]["analyzed_at"] = time
+                    all_pnl_data[mint_address] = tokens[mint_address]
+            else:
+                # If any chunk fails, we'll return None for the whole operation
+                return None
+
+        return all_pnl_data if all_pnl_data else None
 
     def _birdeye_get_wallet_profit_on_token(self, wallet_address: str, token_address: str) -> Optional[float]:
         """
-        Get the profit/loss information for a specific token in a wallet from the Birdeye API.
+        Get the profit/loss information for the specific token in a wallet from the Birdeye API.
 
         Args:
             wallet_address (str): The public key of the wallet.
@@ -850,12 +1038,12 @@ class SolanaTokenSummary:
         Returns:
             Optional[dict]: The profit/loss data, or None on failure.
         """
-        pnl_data = self._birdeye_get_wallet_pnl(wallet_address, [token_address])
+        pnl_data = self._birdeye_get_wallet_tokens_pnl(wallet_address, [token_address])
         if not pnl_data:
             return None
         return float(pnl_data.get(token_address, {}).get("pnl", {}).get("realized_profit_usd", 0))
 
-    def _birdeye_get_token_supply(self, mint_address: str) -> float:
+    def _birdeye_get_token_supply(self, mint_address: str) -> float|None:
         """
         Get the token supply information from the Birdeye API.
         
@@ -869,6 +1057,21 @@ class SolanaTokenSummary:
         if not be_token_security:
             return None
         return float(be_token_security.get("totalSupply", 0) or 0)
+
+    def _birdeye_get_token_creator(self, mint_address: str) -> Optional[str]:
+        """
+        Get the token creator wallet addresses from the Birdeye API.
+
+        Args:
+            mint_address (str): The mint address of the token.
+
+        Returns:
+            Optional[str]: The creator wallet address, or None if not found.
+        """
+        security = self._birdeye_get_token_security(mint_address)
+        if not security:
+            return None
+        return security.get("creatorAddress")
 
     def _birdeye_get_mint_from_pair(self, pair_address: str) -> Optional[str]:
         """
@@ -902,25 +1105,78 @@ class SolanaTokenSummary:
         Returns:
             dict: The JSON response, or an empty dictionary on error.
         """
+        try:
+            response = self._birdeye_fetch_batch(method, [params])
+            return response.get(list(response.keys())[0], {})
+        except Exception as e:
+            _log(f"Birdeye fetch error: {e}", level="ERROR")
+            return {}
+        
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return={})
+    def _birdeye_fetch_batch(self, method: str, params_list: List[dict]) -> dict:
+        """
+        Fetches data from the Birdeye API in batch mode using multiple query parameter sets.
+
+        Args:
+            method (str): The API method/endpoint (e.g., "defi/token_security").
+            params_list (List[dict]): A list of query parameter dictionaries.
+
+        Returns:
+            dict: A dictionary mapping an identifier (from params or index) to the API response.
+        """
         url = f"https://public-api.birdeye.so/{method}"
         headers = {
             "x-chain": "solana",
             "accept": "application/json",
             "x-api-key": self.birdeye_api_key
         }
+
         try:
-            response = self.session.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            return response.json()
+            batch_requester = SimpleBatchRequester(max_workers=4)
+            batch = []
+            for i, params in enumerate(params_list):
+                # Choose a stable id for mapping (e.g., token_address or just index fallback)
+                request_id = params.get("address") or params.get("token") or str(i)
+                batch.append({
+                    "id": request_id,
+                    "url": url,
+                    "headers": headers,
+                    "params": params,
+                    "timeout": 30,
+                })
+
+            responses = batch_requester.run(batch)
+            results = {}
+            for response in responses:
+                if not response:
+                    continue
+
+                request_id = response.get("id")
+                result = response.get("result")
+
+                # Fail if request didn't succeed
+                if not result or result.get("status_code") != 200:
+                    _log(f"Birdeye fetch failed for {request_id}: {result}", level="ERROR")
+                    return {}
+
+                try:
+                    content = result.get("content")
+                    results[request_id] = content
+                except Exception as e:
+                    _log(f"Birdeye fetch invalid content for {request_id}: {e}", level="ERROR")
+                    return {}
+
+            return results
+
         except requests.RequestException as e:
-            _log(f"Birdeye fetch error: {e}", level="ERROR")
+            _log(f"Birdeye fetch batch error: {e}", level="ERROR")
             return {}
         
     # --------------------------
     # Solscan Info
     # --------------------------
     
-    @cache_handler.cache(ttl_s=DAYS_IN_SECONDS)
+    @cache_handler.cache(ttl_s=DAY_IN_SECONDS)
     def _solscan_estimate_wallet_age(self, wallet_address: str) -> Optional[int]:
         """
         Estimates the wallet age based on its metadata from Solscan.
@@ -958,7 +1214,7 @@ class SolanaTokenSummary:
             return None
         return data.get("data", data)
 
-    # @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
     def _solscan_get_wallet_portfolio(self, wallet_address: str) -> Optional[dict]:
         """
         Gets the wallet portfolio information from the Solscan Pro API.
@@ -1011,11 +1267,10 @@ class SolanaTokenSummary:
 
         return data.get("data", data)
 
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL)
-    def _solscan_fetch(self, method: str, params: dict = None) -> dict:
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return={})
+    def _solscan_fetch(self, method: str, params: Optional[dict] = None) -> dict:
         """
         Fetches data from the Solscan Pro API with authentication.
-        @see https://pro-api.solscan.io/pro-api-docs/v2.0
 
         Args:
             method (str): The API method/endpoint (relative to base URL).
@@ -1024,19 +1279,75 @@ class SolanaTokenSummary:
         Returns:
             dict: The JSON response, or {} on error.
         """
+        try:
+            response = self._solscan_fetch_batch(method, [params or {}])
+            return response.get(list(response.keys())[0], {})
+        except Exception as e:
+            _log(f"Solscan fetch error: {e}", level="ERROR")
+            return {}
+
+
+    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return={})
+    def _solscan_fetch_batch(self, method: str, params_list: List[dict]) -> dict:
+        """
+        Fetches data from the Solscan Pro API in batch mode using multiple query parameter sets.
+        @see https://pro-api.solscan.io/pro-api-docs/v2.0
+
+        Args:
+            method (str): The API method/endpoint (relative to base URL).
+            params_list (List[dict]): A list of query parameter dictionaries.
+
+        Returns:
+            dict: A dictionary mapping an identifier (from params or index) to the API response.
+        """
         url = f"https://pro-api.solscan.io/v2.0/{method}"
         headers = {
             "accept": "application/json",
             "token": self.solscan_api_key
         }
-        params = params or {}
 
         try:
-            response = self.session.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            return response.json()
+            batch_requester = SimpleBatchRequester(max_workers=4)
+            batch = []
+            for i, params in enumerate(params_list):
+                request_id = (
+                    params.get("address") or
+                    params.get("account") or
+                    params.get("tx") or
+                    str(i)
+                )
+                batch.append({
+                    "id": request_id,
+                    "url": url,
+                    "headers": headers,
+                    "params": params or {},
+                    "timeout": 30,
+                })
+
+            responses = batch_requester.run(batch)
+            results = {}
+            for response in responses:
+                if not response:
+                    continue
+
+                request_id = response.get("id")
+                result = response.get("result")
+
+                if not result or result.get("status_code") != 200:
+                    _log(f"Solscan fetch failed for {request_id}: {result}", level="ERROR")
+                    return {}
+
+                try:
+                    content = result.get("content")
+                    results[request_id] = content
+                except Exception as e:
+                    _log(f"Solscan fetch invalid content for {request_id}: {e}", level="ERROR")
+                    return {}
+
+            return results
+
         except requests.RequestException as e:
-            _log(f"Solscan fetch error: {e}", level="ERROR")
+            _log(f"Solscan fetch batch error: {e}", level="ERROR")
             return {}
 
     # --------------------------
@@ -1094,7 +1405,7 @@ class SolanaTokenSummary:
             # ================
             # Dexscreener data
             # ================
-            dexscreener_pair_info = self._dexscreener_get_token_pair_info(mint_address, pair_address) or {}
+            dexscreener_pair_info = self._dexscreener_get_pair_info(mint_address, pair_address) or {}
 
             # Parse values
             dex_liquidity = dexscreener_pair_info.get("liquidity", {})

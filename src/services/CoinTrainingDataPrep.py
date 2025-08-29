@@ -26,7 +26,7 @@ class CoinTrainingDataPrep:
     Parser for preparing training data for a given coin pair on Solana.
     """
     def __init__(self):
-        self.storage_dir = AppData().get_config("permanent_storage_dir")
+        self.storage_dir = AppData().get_config("permanent_storage_dir") + "/ctd_raw"
         self.app_data = AppData()
         self.bitquery = BitQuerySolana()
         self.solana = SolanaTokenSummary()

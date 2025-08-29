@@ -1,7 +1,7 @@
 import os
 import json
 import time
-from typing import Any, Union
+from typing import Any, Union, Optional
 
 from lib.LocalCache import cache_handler
 from services.logger.Logger import _log
@@ -126,7 +126,7 @@ class AppData:
                 return entry.get("value")
         return None
 
-    def set_state(self, key: str, value: Any, ttl: int = None) -> bool:
+    def set_state(self, key: str, value: Any, ttl: int|None = None) -> bool:
         """
         Save a key-value pair to the session state JSON file with optional TTL.
 

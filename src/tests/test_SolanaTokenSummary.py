@@ -3,6 +3,7 @@ from services.SolanaTokenSummary import SolanaTokenSummary
 
 TEST_TOKEN_ADDRESS = "3B5wuUrMEi5yATD7on46hKfej3pfmd7t1RKgrsN3pump" # BILLY
 TEST_TOKEN_POOL = "9uWW4C36HiCTGr6pZW9VFhr9vdXktZ8NA8jVnzQU35pJ" # Raydium
+TEST_TOKEN_ADDRESS_2 = "FxGXfmJ6nqXvcANUCQWBbuHrgh6R2s6JXHSdHoyTpump" # ZIT
 TEST_WALLET_ADDRESS = "GixMsyA2jeAoUEQkF2vZD77DdGGh7FFyW8qsezetyEs3"
 TEST_WALLET_ADDRESS_2 = "39H3DGBpHpffjTuwQDR9yv9AgbK4U4hesLdsVZ9yDDc9"
 
@@ -53,6 +54,24 @@ def test_birdeye_get_token_security():
     assert "freezeAuthority" in security_info
     assert "nonTransferable" in security_info
     assert "isTrueToken" in security_info
+    
+def test_birdeye_get_tokens_security():
+    solana = SolanaTokenSummary()
+    security_info = solana._birdeye_get_tokens_security([TEST_TOKEN_ADDRESS, TEST_TOKEN_ADDRESS_2])
+    _log("Tokens Security Info:", security_info)
+    assert isinstance(security_info, dict)
+    assert len(security_info) == 2
+    for addr in [TEST_TOKEN_ADDRESS, TEST_TOKEN_ADDRESS_2]:
+        assert addr in security_info
+        assert "freezeAuthority" in security_info[addr]
+        assert "nonTransferable" in security_info[addr]
+
+def test_birdeye_get_token_creator():
+    solana = SolanaTokenSummary()
+    token_creator = solana._birdeye_get_token_creator(TEST_TOKEN_ADDRESS)
+    _log("Token Creator:", token_creator)
+    assert isinstance(token_creator, str)
+    assert token_creator == "EYsJVQU5igQNaNMptsyL2A6h6QWso34MYxTriAkdQqWj"
 
 def test_birdeye_get_wallet_overview():
     solana = SolanaTokenSummary()
@@ -79,9 +98,9 @@ def test_birdeye_get_wallet_traded_tokens():
         assert "mint_address" in token
         assert "pair_address" in token
 
-def test_birdeye_get_wallet_pnl():
+def test_birdeye_get_wallet_tokens_pnl():
     solana = SolanaTokenSummary()
-    pnl_info = solana._birdeye_get_wallet_pnl(
+    pnl_info = solana._birdeye_get_wallet_tokens_pnl(
         TEST_WALLET_ADDRESS,
         ['So11111111111111111111111111111111111111112']
     )
@@ -153,7 +172,7 @@ def test_solscan_get_wallet_portfolio():
 
 def test_dexscreener_get_token_pair_info():
     solana = SolanaTokenSummary()
-    dex_info = solana._dexscreener_get_token_pair_info(
+    dex_info = solana._dexscreener_get_pair_info(
         TEST_TOKEN_ADDRESS,
         TEST_TOKEN_POOL
     )
@@ -162,8 +181,50 @@ def test_dexscreener_get_token_pair_info():
     assert "priceNative" in dex_info
     assert "priceUsd" in dex_info
     assert "volume" in dex_info
-    
-    
+
+def test_dexscreener_get_tokens_info():
+    solana = SolanaTokenSummary()
+    tokens_info = solana._dexscreener_get_tokens_info(
+        [TEST_TOKEN_ADDRESS, TEST_TOKEN_ADDRESS_2]
+    )
+    _log("Tokens Info:", len(tokens_info))
+    assert isinstance(tokens_info, dict)
+    for token in tokens_info:
+        assert token in [TEST_TOKEN_ADDRESS, TEST_TOKEN_ADDRESS_2]
+        assert "chainId" in tokens_info[token][0]
+        assert "baseToken" in tokens_info[token][0]
+        assert "priceUsd" in tokens_info[token][0]
+        
+def test_dexscreener_get_token_meta():
+    solana = SolanaTokenSummary()
+    token_meta = solana._dexscreener_get_token_meta(TEST_TOKEN_ADDRESS)
+    _log("Token Meta:", token_meta)
+    assert isinstance(token_meta, dict)
+    assert "name" in token_meta
+    assert "symbol" in token_meta
+
+def test_dexscreener_get_tokens_meta():
+    solana = SolanaTokenSummary()
+    tokens_meta = solana._dexscreener_get_tokens_meta(
+        [TEST_TOKEN_ADDRESS, TEST_TOKEN_ADDRESS_2]
+    )
+    _log("Tokens Meta:", tokens_meta)
+    assert isinstance(tokens_meta, dict)
+    for token in tokens_meta:
+        assert token in [TEST_TOKEN_ADDRESS, TEST_TOKEN_ADDRESS_2]
+        assert "name" in tokens_meta[token]
+        assert "symbol" in tokens_meta[token]
+
+def test_dexscreener_fetch_batch_token_summaries():
+    solana = SolanaTokenSummary()
+    mint_addresses = [TEST_TOKEN_ADDRESS_2, TEST_TOKEN_ADDRESS]
+    summaries = solana._dexscreener_fetch_batch_token_summaries(mint_addresses)
+    _log("Batch Token Summaries:", len(summaries))
+    assert isinstance(summaries, dict)
+    for mint in mint_addresses:
+        assert mint in summaries
+        assert "pairs" in summaries[mint]
+
 ## RUG CHECK
 
 def test_rugcheck_get_token_info():
