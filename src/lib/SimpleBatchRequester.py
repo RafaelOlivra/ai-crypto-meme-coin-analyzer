@@ -28,6 +28,7 @@ class SimpleBatchRequester:
             dict: A dictionary containing the request index and the result.
         """
         request_id = request_data.get('id') or request_index
+        context = request_data.get('context', None)
         cache_time = request_data.get('cache_time', None)
         cache_hash = Utils.hash(request_data)
         request_ok = False
@@ -57,6 +58,7 @@ class SimpleBatchRequester:
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             request_result = {
                 'status_code': response.status_code,
+                'context': context,
                 'content': response.json() if 'application/json' in response.headers.get('Content-Type', '') else response.text
             }
             request_ok = True

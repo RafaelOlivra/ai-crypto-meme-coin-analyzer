@@ -1138,8 +1138,15 @@ class SolanaTokenSummary:
             batch = []
             for i, params in enumerate(params_list):
                 request_id = Utils.hash([params, str(i)]) + f"_{i}"
+                context = (
+                    params.get("address") or
+                    params.get("account") or
+                    params.get("tx") or
+                    str(i)
+                )
                 batch.append({
                     "id": request_id,
+                    "context": context,
                     "url": url,
                     "headers": headers,
                     "params": params,
@@ -1153,8 +1160,8 @@ class SolanaTokenSummary:
                 if not response:
                     continue
 
-                request_id = response.get("id")
                 result = response.get("result")
+                request_id = result.get("context")
 
                 # Fail if request didn't succeed
                 if not result or result.get("status_code") != 200:

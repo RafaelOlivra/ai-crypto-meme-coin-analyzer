@@ -177,14 +177,13 @@ def Page():
     for mint_address, security_info in tokens_security_info.items():
         creator = security_info.get("creatorAddress", "")
         df_analysis.loc[df_analysis["mint_address"] == mint_address, "developer_address"] = creator
-
+    
     # Add created pools info
     developer_created_pools = app_data.get_state(f"wa_developer_created_pools_{MAX_TRADES_TOKENS}")
-    developer_created_pools = None
     if not developer_created_pools:
         with st.spinner("Loading wallets pools (This may take a while)..."):
             developer_created_pools = solana._solscan_get_wallets_created_pools(df_analysis['developer_address'].dropna().unique().tolist())
-
+    
     for developer, pools in developer_created_pools.items():
         df_analysis.loc[df_analysis["developer_address"] == developer, "developer_total_tokens_created"] = len(pools)
 
