@@ -1,9 +1,9 @@
 import time
 import requests
 import threading
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 
-from services.logger.Logger import _log
 from lib.LocalCache import cache_handler
 from lib.Utils import Utils
 
@@ -61,7 +61,7 @@ class SimpleBatchRequester:
             }
             request_ok = True
         except requests.exceptions.RequestException as e:
-            _log(f"Request failed for {request_data.get('url')}: {e}", level="ERROR")
+            print(f"[BatchRequest] Request failed for {request_data.get('url')}: {e}")
             request_result = {'error': str(e)}
 
         request_result = {'id': request_id, 'index': request_index, 'result': request_result}
@@ -73,44 +73,59 @@ class SimpleBatchRequester:
         """
         Executes a list of requests in parallel.
         
-        Example:
-            requests_to_make = [
-                {'id': 1, 'url': 'https://httpbin.org/get', 'params': {'id': 1}},
-                {'id': 2, 'url': 'https://httpbin.org/delay/3'},  # This will take 3 seconds
-                {'id': 3, 'url': 'https://httpbin.org/get', 'params': {'id': 3}},
-                {'id': 4, 'url': 'https://httpbin.org/status/404'} # This will fail
-            ]
-            responses = requester.run(requests_to_make)
-
         Args:
             requests_list (list): A list of dictionaries, where each dict contains request details.
 
         Returns:
             list: A list of dictionaries, with each dict containing the request index and its result.
-                  Example: [{'index': 0, 'id': 1, 'result': {...}}, ...]
         """
         results = [None] * len(requests_list)
-        failed_requests = []
+        failed_indices = set()
         
+        # Run initial batch
+        print(f"[BatchRequest] Starting initial batch of {len(requests_list)} requests.")
+        processed_results, newly_failed_indices = self._process_batch(requests_list)
+        for res in processed_results:
+            results[res['index']] = res
+        failed_indices.update(newly_failed_indices)
+
+        # Retry failed requests
+        if failed_indices:
+            failed_requests = [requests_list[i] for i in failed_indices]
+            print(f"[BatchRequest] Retrying {len(failed_indices)} failed requests with indices: {sorted(list(failed_indices))}")
+            
+            # We must re-map the indices for the retry.
+            # Create a mapping from the temporary retry index to the original index.
+            original_index_map = {i: original_idx for i, original_idx in enumerate(failed_indices)}
+            
+            retry_results = self._process_batch(failed_requests, original_index_map)
+            for res in retry_results[0]:
+                results[res['index']] = res
+
+        return results
+
+    def _process_batch(self, requests_list, original_index_map=None):
+        """Helper method to process a batch of requests."""
+        processed_results = []
+        failed_indices = set()
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_index = {
                 executor.submit(self._worker, request_data, i): i
                 for i, request_data in enumerate(requests_list)
             }
-            for future in future_to_index:
-                result = future.result()
+            for future in concurrent.futures.as_completed(future_to_index):
+                temp_index = future_to_index[future]
                 try:
-                    results[result['index']] = result
+                    result = future.result()
+                    # If we're in a retry, use the original index map
+                    original_index = original_index_map.get(temp_index, temp_index) if original_index_map else temp_index
+                    result['index'] = original_index # Update the index in the result dict
+                    processed_results.append(result)
                 except Exception as e:
-                    print(f"[BatchRequest] Error processing result for index {result['index']}: {e}")
-                    failed_requests.append(result['index'])
-
-        # Retry failed requests
-        if failed_requests:
-            print(f"[BatchRequest] Retrying failed requests: {failed_requests}")
-            time.sleep(0.2)  # Wait for a moment before retrying
-            retry_results = self.run([requests_list[i] for i in failed_requests])
-            for retry_result in retry_results:
-                results[retry_result['index']] = retry_result
-
-        return results
+                    # Log the error and add the original index to the failed set
+                    original_index = original_index_map.get(temp_index, temp_index) if original_index_map else temp_index
+                    print(f"[BatchRequest] Error processing request for original index {original_index}: {e}")
+                    failed_indices.add(original_index)
+                    
+        return processed_results, failed_indices

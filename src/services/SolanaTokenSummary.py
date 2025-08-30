@@ -1,5 +1,6 @@
 import time
 import random
+import math
 import requests
 import pandas as pd
 from requests.exceptions import RequestException
@@ -16,7 +17,7 @@ from lib.Utils import Utils
 from services.logger.Logger import _log
 from lib.SimpleBatchRequester import SimpleBatchRequester
 
-DEFAULT_CACHE_TTL = 300
+DEFAULT_CACHE_TTL = 600
 RPC_CACHE_TTL = 2
 MINUTE_IN_SECONDS = 60
 HOUR_IN_SECONDS = 60 * 60
@@ -602,7 +603,6 @@ class SolanaTokenSummary:
             dict: A dictionary mapping each mint address to its token metadata.
         """
         tokens = self._dexscreener_get_tokens_info(mint_addresses)
-        _log(f"Dexscreener tokens info: {tokens}", level="DEBUG")
         tokens_meta = {}
         for mint in tokens:
             data = tokens[mint]
@@ -734,7 +734,7 @@ class SolanaTokenSummary:
             batch = []
             for mint in mint_addresses:
                 batch.append(
-                    {"id": mint, "cache_time": 3600, "url": f"https://api.dexscreener.com/latest/dex/tokens/{mint}", "timeout": 10}
+                    {"id": mint, "cache_time": 30, "url": f"https://api.dexscreener.com/latest/dex/tokens/{mint}", "timeout": 10}
                 )
 
             responses = batch_requester.run(batch)
@@ -858,7 +858,7 @@ class SolanaTokenSummary:
             return None
         return data["data"]
 
-    @cache_handler.cache(ttl_s=HOUR_IN_SECONDS, invalidate_if_return=None)
+    # @cache_handler.cache(ttl_s=HOUR_IN_SECONDS, invalidate_if_return=None)
     def _birdeye_get_wallet_trades(
         self,
         wallet_address: str,
@@ -883,45 +883,46 @@ class SolanaTokenSummary:
             Optional[list]: A list of wallet trades, or None on failure.
         """
         all_trades = []
-        total_fetched = 0
         birdeye_limit = 100
-        tokens_to_ignore = ["USDC", "USDT"]
+        tokens_to_ignore = {"USDC", "USDT"} # Use a set for faster lookup
 
-        while total_fetched < max_trades:
-            data = self._birdeye_fetch(
-                "trader/txs/seek_by_time",
-                {
-                    "address": wallet_address,
-                    "limit": birdeye_limit,
-                    "offset": offset,
-                    "before_time": before_ts if before_ts > 0 else None,
-                    "after_time": after_ts if after_ts > 0 else None,
-                },
-            )
-            #_log(f"Fetched {len(data.get('data', {}).get('items', []))} trades from Birdeye for wallet {wallet_address} (offset {offset})", level="DEBUG")
-            
+        # Determine the number of pages to fetch
+        num_pages = math.ceil(max_trades / birdeye_limit)
+
+        # Create a list of parameter dictionaries for each page
+        params_list = []
+        for i in range(num_pages):
+            current_offset = offset + (i * birdeye_limit)
+            params_list.append({
+                "address": wallet_address,
+                "limit": birdeye_limit,
+                "offset": current_offset,
+                "before_time": before_ts if before_ts > 0 else None,
+                "after_time": after_ts if after_ts > 0 else None,
+            })
+
+        # Fetch all pages in a batch
+        batch_results = self._birdeye_fetch_batch("trader/txs/seek_by_time", params_list)
+
+        if not batch_results:
+            return None
+
+        # Process and combine the results from each page
+        for request_id, data in batch_results.items():
             if not data.get("success") or not data.get("data"):
-                break  # stop if API fails or no more data
+                continue
 
             trades = data["data"].get("items", [])
             if not trades:
-                break  # no more trades to fetch
-            
+                continue
+
             # Filter out trades involving ignored tokens
             for trade in trades:
                 if trade.get("quote", {}).get("symbol") in tokens_to_ignore or \
-                   trade.get("base", {}).get("symbol") in tokens_to_ignore:
-                       continue
+                trade.get("base", {}).get("symbol") in tokens_to_ignore:
+                    continue
                 all_trades.append(trade)
-
-            fetched = len(trades)
-            total_fetched += fetched
-            offset += fetched  # move pagination window forward
-
-            if fetched < birdeye_limit:
-                # Last page reached
-                break
-
+        
         # Crop the results to the maximum number of trades
         all_trades = all_trades[:max_trades]
         return all_trades if all_trades else None
@@ -1113,7 +1114,7 @@ class SolanaTokenSummary:
             _log(f"Birdeye fetch error: {e}", level="ERROR")
             return {}
         
-    @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return={})
+    # @cache_handler.cache(ttl_s=DEFAULT_CACHE_TTL, invalidate_if_return={})
     def _birdeye_fetch_batch(self, method: str, params_list: List[dict]) -> dict:
         """
         Fetches data from the Birdeye API in batch mode using multiple query parameter sets.
@@ -1136,8 +1137,7 @@ class SolanaTokenSummary:
             batch_requester = SimpleBatchRequester(max_workers=4)
             batch = []
             for i, params in enumerate(params_list):
-                # Choose a stable id for mapping (e.g., token_address or just index fallback)
-                request_id = params.get("address") or params.get("token") or str(i)
+                request_id = Utils.hash([params, str(i)]) + f"_{i}"
                 batch.append({
                     "id": request_id,
                     "url": url,
@@ -1341,18 +1341,14 @@ class SolanaTokenSummary:
             batch_requester = SimpleBatchRequester(max_workers=4)
             batch = []
             for i, params in enumerate(params_list):
-                request_id = (
-                    params.get("address") or
-                    params.get("account") or
-                    params.get("tx") or
-                    str(i)
-                )
+                request_id = Utils.hash([params, str(i)]) + f"_{i}"
                 batch.append({
                     "id": request_id,
                     "url": url,
                     "headers": headers,
                     "params": params or {},
                     "timeout": 30,
+                    "cache_time": 300  # Cache for 5 minutes
                 })
 
             responses = batch_requester.run(batch)

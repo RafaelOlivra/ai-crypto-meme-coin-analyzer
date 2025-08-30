@@ -31,7 +31,7 @@ def compute_metrics(combined_df):
 # ---------------------------
 def Page():
     CACHE_TTL = 60 * 60 * 1  # 1 hour
-    MAX_TRADES_TOKENS = 1500
+    MAX_TRADES_TOKENS = 400
 
     app_data = AppData()
     solana = SolanaTokenSummary()
@@ -41,6 +41,7 @@ def Page():
 
     st.title("💰 Wallet Analytics") 
 
+    wallet_overview = None
     wallet_address = st.text_input("Inform Wallet Address", value=app_data.get_state("wa_wallet_address") or "")
     if wallet_address != "":
         app_data.set_state("wa_wallet_address", wallet_address, CACHE_TTL)
@@ -54,45 +55,47 @@ def Page():
     
     st.write("### Overview:")
     
+    requested_at = wallet_overview.get("requested_timestamp", "N/A")
+    if requested_at != "N/A":
+        requested_at = Utils.formatted_date(requested_at, format="%Y-%m-%d %H:%M:%S") 
+    
     col1, col2 = st.columns(2)
-    col1.metric(f"Net Worth ({wallet_overview.get('currency', 'N/A').upper()})", f"{wallet_overview.get('net_worth', 0):,.2f}")
-    col2.metric("Requested At", wallet_overview.get("requested_timestamp", "N/A"))
+    col1.metric(f"Net Worth", f"$ {wallet_overview.get('net_worth', 0):,.2f}")
+    col2.metric("Requested At", requested_at)
     
     #---------------------------------------
     # Prepare Data for Analysis
     #---------------------------------------
     
-    recent_tx = app_data.get_state(f"wa_wallet_tx_${MAX_TRADES_TOKENS}")
+    recent_tx = app_data.get_state(f"wa_wallet_tx_{MAX_TRADES_TOKENS}")
+    recent_tx = None
     if not recent_tx:
         with st.spinner("Loading recent transactions (This may take a while)..."):
-            recent_tx = solana._birdeye_get_wallet_trades(wallet_address)
-            app_data.set_state(f"wa_wallet_tx_${MAX_TRADES_TOKENS}", recent_tx, CACHE_TTL)
+            recent_tx = solana._birdeye_get_wallet_trades(wallet_address, max_trades=MAX_TRADES_TOKENS)
+            app_data.set_state(f"wa_wallet_tx_{MAX_TRADES_TOKENS}", recent_tx, CACHE_TTL)
     
     if not recent_tx or len(recent_tx) == 0:
         st.info("No recent transactions found for this wallet.")
         return
-    df_recent_tx = pd.DataFrame(recent_tx)
+    recent_tx_df = pd.DataFrame(recent_tx)
     
-    recent_traded_tokens = app_data.get_state(f"wa_wallet_traded_tokens_${MAX_TRADES_TOKENS}")
+    
+    recent_traded_tokens = app_data.get_state(f"wa_wallet_traded_tokens_{MAX_TRADES_TOKENS}")
     if not recent_traded_tokens:
         with st.spinner("Loading recent traded tokens (This may take a while)..."):
             recent_traded_tokens = solana._birdeye_get_wallet_traded_tokens(wallet_address, max_trades=MAX_TRADES_TOKENS)
-            app_data.set_state(f"wa_wallet_traded_tokens_${MAX_TRADES_TOKENS}", recent_traded_tokens, CACHE_TTL)
+            app_data.set_state(f"wa_wallet_traded_tokens_{MAX_TRADES_TOKENS}", recent_traded_tokens, CACHE_TTL)
 
     if not recent_traded_tokens or len(recent_traded_tokens) == 0:
         st.info("No recent traded tokens found for this wallet.")
         return
-    df_recent_traded_tokens = pd.DataFrame(recent_traded_tokens)
-    
-    
-    
     
 
-    recent_pnls = app_data.get_state(f"wa_wallet_pnls_${MAX_TRADES_TOKENS}")
+    recent_pnls = app_data.get_state(f"wa_wallet_pnls_{MAX_TRADES_TOKENS}")
     if recent_pnls is None:
         with st.spinner("Retrieving PnL for recent transactions (This may take a while)..."):
             recent_pnls = solana._birdeye_get_wallet_tokens_pnl(wallet_address, recent_traded_tokens)
-            app_data.set_state(f"wa_wallet_pnls_${MAX_TRADES_TOKENS}", recent_pnls, CACHE_TTL)
+            app_data.set_state(f"wa_wallet_pnls_{MAX_TRADES_TOKENS}", recent_pnls, CACHE_TTL)
 
     if recent_pnls is None:
         st.info("No PnL data found for this wallet's recent transactions.")
@@ -119,7 +122,7 @@ def Page():
             # "analyzed_at": data.get("analyzed_at", ""),
             "mint_address": mint_address,
             "pair_address": pair_address,
-            "symbol": data.get("symbol", ""),
+            "symbol": token.get("symbol", ""),
             "net_profit_usd": data.get("pnl", {}).get("total_usd", 0),
             "net_profit_percent": data.get("pnl", {}).get("total_percent", 0),
             "avg_profit_per_trade": data.get("pnl", {}).get("avg_profit_per_trade_usd", 0),
@@ -134,13 +137,13 @@ def Page():
     
     
     
-    tokens_meta = app_data.get_state(f"wa_tokens_meta_${MAX_TRADES_TOKENS}")
+    tokens_meta = app_data.get_state(f"wa_tokens_meta_{MAX_TRADES_TOKENS}")
     if not tokens_meta:
         tokens_meta = {}
         with st.spinner("Loading token metadata (This may take a while)..."):
             mint_addresses = df_recent_pnls['mint_address'].unique().tolist()
             tokens_meta = solana._dexscreener_get_tokens_meta(mint_addresses)
-            app_data.set_state(f"wa_tokens_meta_${MAX_TRADES_TOKENS}", tokens_meta, CACHE_TTL)
+            app_data.set_state(f"wa_tokens_meta_{MAX_TRADES_TOKENS}", tokens_meta, CACHE_TTL)
 
     if not tokens_meta:
         st.info("No token metadata found.")
@@ -166,19 +169,21 @@ def Page():
     # Add developer info (creator)
     mint_addresses = df_analysis["mint_address"].unique().tolist()
 
-    tokens_security_info = app_data.get_state(f"wa_tokens_security_info_${MAX_TRADES_TOKENS}")
+    tokens_security_info = app_data.get_state(f"wa_tokens_security_info_{MAX_TRADES_TOKENS}")
     if not tokens_security_info:
-        tokens_security_info = solana._birdeye_get_tokens_security(mint_addresses)
+        with st.spinner("Loading token security information (This may take a while)..."):
+            tokens_security_info = solana._birdeye_get_tokens_security(mint_addresses)
 
     for mint_address, security_info in tokens_security_info.items():
         creator = security_info.get("creatorAddress", "")
         df_analysis.loc[df_analysis["mint_address"] == mint_address, "developer_address"] = creator
 
     # Add created pools info
-    developer_created_pools = app_data.get_state(f"wa_developer_created_pools_${MAX_TRADES_TOKENS}")
+    developer_created_pools = app_data.get_state(f"wa_developer_created_pools_{MAX_TRADES_TOKENS}")
     developer_created_pools = None
     if not developer_created_pools:
-        developer_created_pools = solana._solscan_get_wallets_created_pools(df_analysis['developer_address'].dropna().unique().tolist())
+        with st.spinner("Loading wallets pools (This may take a while)..."):
+            developer_created_pools = solana._solscan_get_wallets_created_pools(df_analysis['developer_address'].dropna().unique().tolist())
 
     for developer, pools in developer_created_pools.items():
         df_analysis.loc[df_analysis["developer_address"] == developer, "developer_total_tokens_created"] = len(pools)
@@ -189,11 +194,21 @@ def Page():
     
     # Coins Analyzed
     
-    st.write(f"#### {len(df_analysis)} Coins Analyzed:")
+    st.write(f"#### {len(df_analysis)} Unique Coins Analyzed:")
     st.dataframe(df_analysis, use_container_width=True)
     
     # Profit and Loss
-    st.metric("Total PnL", f"${df_analysis['net_profit_usd'].sum():,.2f}")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Trades Analyzed", f"{len(recent_tx)}")
+    col2.metric("Coins Analyzed", f"{len(df_analysis)}")
+    col3.metric("Total PnL", f"${df_analysis['net_profit_usd'].sum():,.2f}")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    best_coin_idx = df_analysis['net_profit_usd'].idxmax()
+    worst_coin_idx = df_analysis['net_profit_usd'].idxmin()
+    col1.metric("Most Profitable Coin", str(df_analysis.loc[best_coin_idx, 'symbol']), delta=f"{df_analysis.loc[best_coin_idx, 'net_profit_usd']:,.2f} $")
+    col2.metric("Most Unprofitable Coin", str(df_analysis.loc[worst_coin_idx, 'symbol']), delta=f"{df_analysis.loc[worst_coin_idx, 'net_profit_usd']:,.2f} $")
+    col3.metric("Avg. PnL per Coin", f"${df_analysis['net_profit_usd'].mean():,.2f}")
 
     #---------------------------------------
     # Social Analysis
@@ -203,7 +218,7 @@ def Page():
     # --- Social Presence
     
     # Always ensure required social columns exist
-    required_cols_fix = ['discord', 'twitter', 'instagram', 'facebook']
+    required_cols_fix = ['discord', 'twitter', 'instagram', 'facebook', 'telegram']
     for col in required_cols_fix:
         if col not in df_analysis.columns:
             df_analysis[col] = ""
@@ -235,17 +250,17 @@ def Page():
     st.write("#### Social Media Presence:")
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Unique Tokens", total_coins)
-    col2.metric("Total Tokens with Socials", count_coins_with_socials, delta=(f"{count_coins_with_socials / total_coins * 100:.2f}%"))
-    col3.metric("Total Tokens with Websites", count_coins_with_websites, delta=(f"{count_coins_with_websites / total_coins * 100:.2f}%"))
+    col1.metric("Total Tokens with Socials", count_coins_with_socials, delta=(f"{count_coins_with_socials / total_coins * 100:.2f}%"))
+    col2.metric("Total Tokens with Websites", count_coins_with_websites, delta=(f"{count_coins_with_websites / total_coins * 100:.2f}%"))
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Twitter", count_socials["twitter"], delta=(f"{count_socials['twitter'] / total_coins * 100:.2f}%"))
     col2.metric("Discord", count_socials["discord"], delta=(f"{count_socials['discord'] / total_coins * 100:.2f}%"))
     col3.metric("Instagram", count_socials["instagram"], delta=(f"{count_socials['instagram'] / total_coins * 100:.2f}%"))
     col4.metric("Facebook", count_socials["facebook"], delta=(f"{count_socials['facebook'] / total_coins * 100:.2f}%"))
-    
-    
+    col1.metric("Telegram", count_socials["telegram"], delta=(f"{count_socials['telegram'] / total_coins * 100:.2f}%"))
+
+
     # --- PnL vs Social
     
     st.write("#### PnL Analysis by Social Presence")
@@ -312,7 +327,10 @@ def Page():
     df_dev_analysis_dev = df_analysis[df_analysis["developer_total_tokens_created"].notna()]
     df_dev_analysis_dev_1 = df_dev_analysis_dev[df_dev_analysis_dev["developer_total_tokens_created"] == 1]
     df_dev_analysis_dev_up_to_5 = df_dev_analysis_dev[df_dev_analysis_dev["developer_total_tokens_created"] <= 5]
-    df_dev_analysis_dev_up_more = df_dev_analysis_dev[df_dev_analysis_dev["developer_total_tokens_created"] > 5]
+    df_dev_analysis_dev_5_to_10 = df_dev_analysis_dev[(
+        df_dev_analysis_dev["developer_total_tokens_created"] > 5)
+        & (df_dev_analysis_dev["developer_total_tokens_created"] <= 10)]
+    df_dev_analysis_dev_above_10 = df_dev_analysis_dev[df_dev_analysis_dev["developer_total_tokens_created"] > 10]
     count_rows_without_dev = df_analysis[df_analysis["developer_total_tokens_created"].isna()].shape[0]
 
     # --- Dev Proficiency
@@ -321,12 +339,14 @@ def Page():
     
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Unique Developers", df_dev_analysis_dev.shape[0])
-    col2.metric("Devs without Tokens (IGNORED)", count_rows_without_dev)
+    col2.metric("Tokens without Dev (IGNORED)", count_rows_without_dev)
+    col3.metric("Avg. Tokens per Dev", f"{df_dev_analysis_dev['developer_total_tokens_created'].mean():.2f}")
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Devs with 1 Token", df_dev_analysis_dev_1.shape[0])
     col2.metric("Devs with 1-5 Tokens", df_dev_analysis_dev_up_to_5.shape[0])
-    col3.metric("Devs with 5+ Tokens", df_dev_analysis_dev_up_more.shape[0])
+    col3.metric("Devs with 5-10 Tokens", df_dev_analysis_dev_5_to_10.shape[0])
+    col4.metric("Devs with 10+ Tokens", df_dev_analysis_dev_above_10.shape[0])
 
     # --- PnL by Dev Proficiency
 
@@ -335,7 +355,8 @@ def Page():
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Avg. PnL (when Dev 1 Token)", f"$ {df_dev_analysis_dev_1['net_profit_usd'].mean():,.2f}")
     col2.metric("Avg. PnL (when Dev 1-5 Tokens)", f"$ {df_dev_analysis_dev_up_to_5['net_profit_usd'].mean():,.2f}")
-    col3.metric("Avg. PnL (when Dev 5+ Tokens)", f"$ {df_dev_analysis_dev_up_more['net_profit_usd'].mean():,.2f}")
+    col3.metric("Avg. PnL (when Dev 5-10 Tokens)", f"$ {df_dev_analysis_dev_5_to_10['net_profit_usd'].mean():,.2f}")
+    col4.metric("Avg. PnL (when Dev 10+ Tokens)", f"$ {df_dev_analysis_dev_above_10['net_profit_usd'].mean():,.2f}")
 
 # --------------------------
 # INIT

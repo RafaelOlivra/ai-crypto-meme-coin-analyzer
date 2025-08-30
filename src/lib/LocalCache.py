@@ -114,10 +114,12 @@ class LocalCache:
                 expire_at = wrapped.get("expire_at", 0)
                 if self._is_expired(expire_at):
                     self._print(f"Cache expired for key '{key}' (JSON)", type="miss")
+                    os.remove(json_cache_path)
                     return None
                 cache_value = wrapped.get("value")
                 if invalidate_if_return is not '__INVALIDATE__' and cache_value == invalidate_if_return:
                     self._print(f"Cache invalidated for key '{key}'.", type="miss")
+                    os.remove(json_cache_path)
                 else:
                     self._print(f"Cache hit (JSON) for key '{key}'", type="hit")
                     return cache_value
@@ -133,10 +135,12 @@ class LocalCache:
                 expire_at = wrapped.get("expire_at", 0)
                 if self._is_expired(expire_at):
                     self._print(f"Cache expired for key '{key}' (Pickle)", type="miss")
+                    os.remove(pickle_cache_path)
                     return None
                 cache_value = wrapped.get("value")
                 if invalidate_if_return is not '__INVALIDATE__' and cache_value == invalidate_if_return:
                     self._print(f"Cache invalidated for key '{key}'.", type="miss")
+                    os.remove(pickle_cache_path)
                 else:
                     self._print(f"Cache hit (Pickle) for key '{key}'", type="hit")
                     return cache_value

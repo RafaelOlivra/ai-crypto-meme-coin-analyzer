@@ -731,7 +731,7 @@ class BitQuerySolana:
                     wallet_address = tx["receiver"]["address"]
 
                     if block_date:
-                        age = Utils.get_days_since(block_date, format="%Y-%m-%d %H:%M:%S %Z")
+                        age = Utils.get_days_since(block_date, parse_format="%Y-%m-%d %H:%M:%S %Z")
                         results[wallet_address] = age if age else 0
                     else:
                         results[wallet_address] = 0

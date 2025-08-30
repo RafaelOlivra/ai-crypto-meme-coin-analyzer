@@ -164,15 +164,19 @@ class SimpleLogger:
         if type(message) == str:
             message = message.replace("\n", "\\n")
 
-        # Log the message at the specified level
-        if level == logging.INFO:
-            self.logger.info(message)
-        elif level == logging.WARNING:
-            self.logger.warning(message)
-        elif level == logging.ERROR:
-            self.logger.error(message)
-        elif level == logging.DEBUG:
-            self.logger.debug(message)
+        try:
+            # Log the message at the specified level
+            if level == logging.INFO:
+                self.logger.info(message)
+            elif level == logging.WARNING:
+                self.logger.warning(message)
+            elif level == logging.ERROR:
+                self.logger.error(message)
+            elif level == logging.DEBUG:
+                self.logger.debug(message)
+        except IOError as e:
+            # Fallback to printing to console if the log file is locked
+            print(f"ERROR: Could not write to log file. Reason: {e}")
 
     # --------------------------
     # System Utils

@@ -99,7 +99,7 @@ class AppData:
 
     def get_state(self, key: str) -> Any:
         """
-        Retrieve a value from the session state JSON file.
+        Retrieve a specific value from the application's state.
 
         Args:
             key (str): The key for the state variable to retrieve.
@@ -107,59 +107,47 @@ class AppData:
         Returns:
             Any: The value of the state variable, or None if the key doesn't exist or is expired.
         """
-        state_file = self._get_storage_map()["session_state"]
-        if os.path.exists(state_file):
-            with open(state_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                entry = data.get(key)
-                if entry is None:
-                    return None
-
-                # Handle TTL expiration
-                expires_at = entry.get("expires_at")
-                if expires_at is not None and time.time() > expires_at:
-                    # Expired -> remove and resave file
-                    data.pop(key, None)
-                    self._save_file(state_file, data)
-                    return None
-
-                return entry.get("value")
+        # Get the entire application state dictionary from the cache
+        app_state = cache_handler.get("APP_DATA_STATE")
+        if app_state and isinstance(app_state, dict):
+            # Return the value for the specific key
+            return app_state.get(key)
         return None
 
-    def set_state(self, key: str, value: Any, ttl: int|None = None) -> bool:
+    def set_state(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """
-        Save a key-value pair to the session state JSON file with optional TTL.
+        Save a key-value pair to the application's state.
 
         Args:
             key (str): The key for the state variable.
             value (Any): The value to save.
-            ttl (int, optional): Time-to-live in seconds. If None, data never expires.
+            ttl (int, optional): Time-to-live in seconds for the entire state object.
+                                 If None, the default TTL from the cache is used.
 
         Returns:
             bool: True if saved successfully, False otherwise.
         """
         if not key or not isinstance(key, str):
-            _log(f"Invalid key: {key}", level="ERROR")
+            print(f"Invalid key: {key}", level="ERROR")
             return False
 
-        # If value is none, clear the state
+        # If value is none, clear the state.
         if value is None:
             return self.clear_state(key)
+        
+        # Retrieve the current state or initialize a new dictionary
+        app_state = cache_handler.get("APP_DATA_STATE") or {}
+        
+        # Set the specific key within the state dictionary
+        app_state[key] = value
+        
+        # Save the updated dictionary back to the cache
+        cache_handler.set("APP_DATA_STATE", app_state, ttl)
+        return True
 
-        state_file = self._get_storage_map()["session_state"]
-        data = {}
-        if os.path.exists(state_file):
-            with open(state_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-        expires_at = time.time() + ttl if ttl is not None else None
-        data[key] = {"value": value, "expires_at": expires_at}
-
-        return self._save_file(state_file, data)
-    
     def clear_state(self, key: str) -> bool:
         """
-        Clear a specific key from the session state JSON file.
+        Clear a specific key from the application's state.
 
         Args:
             key (str): The key for the state variable to clear.
@@ -167,13 +155,14 @@ class AppData:
         Returns:
             bool: True if cleared successfully, False otherwise.
         """
-        state_file = self._get_storage_map()["session_state"]
-        if os.path.exists(state_file):
-            with open(state_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if key in data:
-                    del data[key]
-                    return self._save_file(state_file, data)
+        app_state = cache_handler.get("APP_DATA_STATE")
+        
+        # If the state exists and the key is in the state, remove it
+        if app_state and isinstance(app_state, dict) and key in app_state:
+            del app_state[key]
+            # Save the modified dictionary back to the cache
+            cache_handler.set("APP_DATA_STATE", app_state)
+            return True
         return False
 
     # --------------------------
@@ -244,7 +233,6 @@ class AppData:
         permanent_storage_dir = self.get_config("permanent_storage_dir")
         return {
             "image_cache": f"{temp_storage_dir}/_image-cache",
-            "session_state": f"{temp_storage_dir}/_session-state.json",
             "permanent_data": f"{permanent_storage_dir}/data"
         }
 
